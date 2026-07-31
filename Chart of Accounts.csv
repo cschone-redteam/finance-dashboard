@@ -1,0 +1,140 @@
+﻿account_name,account_code,display_category
+Cash,Bank,Cash on hand
+Accounts Receivable (A/R),Accounts receivable (A/R),Accounts Receivable (A/R)
+Accrued Revenue,Other Current Assets,Other Current Assets
+Allowance for bad debts,Other Current Assets,Allowance for Bad Debts
+Due From Affiliates,Other Current Assets,Loans to Others
+Inventory Asset,Other Current Assets,Inventory
+Loans to others,Other Current Assets,Loans to Others
+Loans to partners,Other Current Assets,Loans to Stockholders
+Other Current Assets,Other Current Assets,Other Current Assets
+Payments to deposit,Other Current Assets,Undeposited Funds
+Prepaid expenses,Other Current Assets,Prepaid Expenses
+Accumulated amortization,Fixed Assets,Accumulated Amortization
+Accumulated depreciation,Fixed Assets,Accumulated Depreciation
+Developed Software,Fixed Assets,Intangible Assets
+Furniture & fixtures,Fixed Assets,Furniture & Fixtures
+Long-term office equipment,Fixed Assets,Other fixed assets
+"Tools, machinery, and equipment",Fixed Assets,Machinery & Equipment
+Deferred income taxes,Other Assets,Deferred tax
+Goodwill,Other Assets,Goodwill
+Long-term investments,Other Assets,Long-term investments
+Long-term investments:Investment Fieldlens,Other Assets,Other Long-term Assets
+Long-term investments:Investment RedTeamGo,Other Assets,Other Long-term Assets
+Long-term loans to related parties,Other Assets,Long Term Loans and Advances to Related Parties
+Security deposits,Other Assets,Security Deposits
+Accounts Payable (A/P),Accounts payable (A/P),Accounts Payable (A/P)
+Accrual to Cash,Other Current Liabilities,Other Current Liabilities
+Accrued Liabilities,Other Current Liabilities,Other Current Liabilities
+Customer prepayments,Other Current Liabilities,Other Current Liabilities
+Due to Affiliates,Other Current Liabilities,Other Current Liabilities
+Payroll wages and tax to pay,Other Current Liabilities,Payroll Tax Payable
+Payroll wages and tax to pay:Payroll Benefits to Pay,Other Current Liabilities,Payroll Tax Payable
+Payroll wages and tax to pay:Payroll tax to pay,Other Current Liabilities,Payroll Tax Payable
+Payroll wages and tax to pay:Retirement Benefits to Pay,Other Current Liabilities,Payroll Tax Payable
+Payroll wages and tax to pay:Wages to pay,Other Current Liabilities,Payroll Tax Payable
+Sales tax to pay,Other Current Liabilities,Sales Tax Payable
+Short-term business loans,Other Current Liabilities,Loan Payable
+Short-term loans from partners,Other Current Liabilities,Loan Payable
+Deferred Rent,Long Term Liabilities,Other Long Term Liabilities
+Deferred Revenue,Long Term Liabilities,Other Long Term Liabilities
+Long-term business loans,Long Term Liabilities,Other Long Term Liabilities
+Long-term loans from partners,Long Term Liabilities,Debts related to participating interests
+Other Long Term Liabilities,Long Term Liabilities,Other Long Term Liabilities
+Opening balance equity,Equity,Opening Balance Equity
+Partner distributions,Equity,Partner Distributions
+Partner investments,Equity,Partner Contributions
+RedTeamFlex Equity,Equity,Owner's Equity
+RedTeamGo Equity,Equity,Owner's Equity
+Retained Earnings,Equity,Retained Earnings
+Billable Expense Income,Income,Service/Fee Income
+Discounts given,Income,Discounts/Refunds Given
+Sales,Income,Sales of Product Income
+Sales:Fieldlens Sales,Income,Sales of Product Income
+Sales:Other Sales,Income,Sales of Product Income
+Sales:RedTeamFlex Sales,Income,Sales of Product Income
+Sales:RedTeamGo Sales,Income,Sales of Product Income
+Sales of Product Income,Income,Sales of Product Income
+Services,Income,Service/Fee Income
+Uncategorized Income,Income,Service/Fee Income
+Cost of goods sold,Cost of Goods Sold,Supplies & Materials - COGS
+Cost of goods sold:Cost of labor - COGS,Cost of Goods Sold,Cost of labor - COS
+Cost of goods sold:Cost of labor - COGS:RedTeamFlex COGS,Cost of Goods Sold,Cost of labor - COS
+Cost of goods sold:Cost of labor - COGS:RedTeamFlex COGS:RTF Contractors and Consultants Offshore,Cost of Goods Sold,Cost of labor - COS
+Cost of goods sold:Cost of labor - COGS:RedTeamFlex COGS:RTF Contractors and Consultants Onshore,Cost of Goods Sold,Cost of labor - COS
+Cost of goods sold:Cost of labor - COGS:RedTeamGo COGS,Cost of Goods Sold,Cost of labor - COS
+Cost of goods sold:Cost of labor - COGS:RedTeamGo COGS:RTG Contractors and Consultants Offshore,Cost of Goods Sold,Cost of labor - COS
+Cost of goods sold:Cost of labor - COGS:RedTeamGo COGS:RTG Contractors and Consultants Onshore,Cost of Goods Sold,Cost of labor - COS
+Cost of goods sold:Cost of labor - COGS:Related Company Charges - COGs,Cost of Goods Sold,Cost of labor - COS
+Cost of goods sold:RedTeamFlex Infrastructure,Cost of Goods Sold,Supplies & Materials - COGS
+Cost of goods sold:RedTeamGo Infrastructure,Cost of Goods Sold,Supplies & Materials - COGS
+Other COGS,Cost of Goods Sold,Other Costs of Services - COS
+Advertising & Promotion,Expenses,Advertising/Promotional
+Advertising & Promotion:Advertising (CM Project),Expenses,Advertising/Promotional
+Advertising & Promotion:Advertising Events,Expenses,Advertising/Promotional
+Advertising & Promotion:Advertising Miscellaneous,Expenses,Advertising/Promotional
+Advertising & Promotion:Advertising Outsources Work/Staff,Expenses,Advertising/Promotional
+Advertising & Promotion:Advertising Paid Traffic,Expenses,Advertising/Promotional
+Advertising & Promotion:Advertising Referral,Expenses,Advertising/Promotional
+Advertising & Promotion:Advertising Tools,Expenses,Advertising/Promotional
+Bad Debt,Expenses,Bad Debts
+Business licenses,Expenses,Taxes Paid
+Commissions & fees,Expenses,Commissions & fees
+Contract labor,Expenses,Cost of Labor
+Contract labor:RedTeamFlex Contract Labor,Expenses,Cost of Labor
+Contract labor:RedTeamFlex Contract Labor:RTF Contractors and Consultants CM,Expenses,Cost of Labor
+Contract labor:RedTeamFlex Contract Labor:RTF Contractors and Consultants Initiatives,Expenses,Cost of Labor
+Contract labor:RedTeamFlex Contract Labor:RTF Contractors and Consultants Offshore,Expenses,Cost of Labor
+Contract labor:RedTeamFlex Contract Labor:RTF Contractors and Consultants Onshore,Expenses,Cost of Labor
+Contract labor:RedTeamGo Contract Labor,Expenses,Cost of Labor
+Contract labor:RedTeamGo Contract Labor:RTG Contractors and Consultants Offshore,Expenses,Cost of Labor
+Contract labor:RedTeamGo Contract Labor:RTG Contractors and Consultants Onshore,Expenses,Cost of Labor
+Contributions to charities,Expenses,Charitable Contributions
+Employee Benefits,Expenses,Payroll Expenses
+Entertainment,Expenses,Entertainment
+General business expenses,Expenses,Other Business Expenses
+General business expenses:Bank fees & service charges,Expenses,Other Business Expenses
+General business expenses:Continuing education,Expenses,Other Business Expenses
+General business expenses:Memberships & subscriptions,Expenses,Dues & subscriptions
+Insurance,Expenses,Insurance
+Interest paid,Expenses,Interest Paid
+Legal & accounting services,Expenses,Legal & Professional Fees
+Meals,Expenses,Travel Meals
+Office expenses,Expenses,Office/General Administrative Expenses
+Office expenses:Merchant account fees,Expenses,Office/General Administrative Expenses
+Office expenses:Office supplies,Expenses,Office/General Administrative Expenses
+Office expenses:Printing & photocopying,Expenses,Office/General Administrative Expenses
+Office expenses:Shipping & postage,Expenses,"Shipping, Freight & Delivery"
+Office expenses:Small tools & equipment,Expenses,Office/General Administrative Expenses
+Office expenses:Software & apps,Expenses,Office/General Administrative Expenses
+Payroll expenses,Expenses,Payroll Expenses
+Payroll expenses:Allocated Labor and Burden,Expenses,Payroll Expenses
+Payroll expenses:Benefits,Expenses,Payroll Expenses
+Payroll expenses:Budget Adustments,Expenses,Payroll Expenses
+Payroll expenses:Incentive & Bonus,Expenses,Payroll Expenses
+Payroll expenses:Payments to partners,Expenses,Payroll Wage Expenses
+Payroll expenses:Payroll taxes,Expenses,Payroll Expenses
+Payroll expenses:Salaries & wages,Expenses,Payroll Wage Expenses
+Professional & Consulting Fees,Expenses,Legal & Professional Fees
+Purchases,Expenses,Supplies & Materials
+Related Company Charges - G&A,Expenses,Cost of Labor
+Rent,Expenses,Rent or Lease of Buildings
+Repairs & maintenance,Expenses,Repair & Maintenance
+Taxes paid,Expenses,Taxes Paid
+Taxes paid:Property taxes,Expenses,Taxes Paid
+Tools and Productivity,Expenses,Other Business Expenses
+Travel,Expenses,Travel
+Uncategorized Expense,Expenses,Other Miscellaneous Service Cost
+Utilities,Expenses,Utilities
+Utilities:Internet & TV services,Expenses,Utilities
+Utilities:Phone service,Expenses,Utilities
+Interest earned,Other Income,Other Miscellaneous Income
+Other Income,Other Income,Other Miscellaneous Income
+Sale of an asset,Other Income,Gain/loss on sale of fixed assets
+Amortization expenses,Other Expense,Amortization
+Depreciation,Other Expense,Depreciation
+Federal Income Tax,Other Expense,Other Miscellaneous Expense
+Gain Loss on Sale of Assets,Other Expense,Other Miscellaneous Expense
+Miscellaneous Expense,Other Expense,Other Miscellaneous Expense
+Penalties & settlements,Other Expense,Penalties & Settlements
+Vehicle expenses,Other Expense,Other Vehicle Expenses

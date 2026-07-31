@@ -1,0 +1,419 @@
+import { supabaseAdmin } from "./supabase-server";
+
+const QBO_AUTH_URL = "https://appcenter.intuit.com/connect/oauth2";
+const QBO_TOKEN_URL =
+  "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
+
+function apiBase(): string {
+  const env = process.env.QUICKBOOKS_ENVIRONMENT || "sandbox";
+  return env === "production"
+    ? "https://quickbooks.api.intuit.com"
+    : "https://sandbox-quickbooks.api.intuit.com";
+}
+
+export function getAuthorizationUrl(state: string): string {
+  const params = new URLSearchParams({
+    client_id: process.env.QUICKBOOKS_CLIENT_ID!,
+    response_type: "code",
+    scope: "com.intuit.quickbooks.accounting",
+    redirect_uri: process.env.QUICKBOOKS_REDIRECT_URI!,
+    state,
+  });
+  return `${QBO_AUTH_URL}?${params.toString()}`;
+}
+
+export async function exchangeCodeForTokens(
+  code: string,
+  realmId: string
+): Promise<void> {
+  const credentials = Buffer.from(
+    `${process.env.QUICKBOOKS_CLIENT_ID}:${process.env.QUICKBOOKS_CLIENT_SECRET}`
+  ).toString("base64");
+
+  const res = await fetch(QBO_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: process.env.QUICKBOOKS_REDIRECT_URI!,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Token exchange failed: ${text}`);
+  }
+
+  const data = await res.json();
+  const expiresAt = new Date(
+    Date.now() + data.expires_in * 1000
+  ).toISOString();
+
+  const { error } = await supabaseAdmin.from("qbo_tokens").upsert(
+    {
+      realm_id: realmId,
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: expiresAt,
+    },
+    { onConflict: "realm_id" }
+  );
+
+  if (error) {
+    console.error("Failed to store QBO tokens:", error);
+    throw new Error(`Failed to store tokens: ${error.message}`);
+  }
+}
+
+async function refreshTokenIfNeeded(realmId: string): Promise<string> {
+  const { data: token } = await supabaseAdmin
+    .from("qbo_tokens")
+    .select("*")
+    .eq("realm_id", realmId)
+    .single();
+
+  if (!token) throw new Error("No QBO token found");
+
+  if (new Date(token.expires_at) > new Date(Date.now() + 60_000)) {
+    return token.access_token;
+  }
+
+  const credentials = Buffer.from(
+    `${process.env.QUICKBOOKS_CLIENT_ID}:${process.env.QUICKBOOKS_CLIENT_SECRET}`
+  ).toString("base64");
+
+  const res = await fetch(QBO_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: token.refresh_token,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Token refresh failed: ${text}`);
+  }
+
+  const data = await res.json();
+  const expiresAt = new Date(
+    Date.now() + data.expires_in * 1000
+  ).toISOString();
+
+  await supabaseAdmin
+    .from("qbo_tokens")
+    .update({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: expiresAt,
+    })
+    .eq("realm_id", realmId);
+
+  return data.access_token;
+}
+
+export async function fetchTrialBalance(
+  realmId: string,
+  startDate: string,
+  endDate: string
+): Promise<QboReportResponse> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+  });
+
+  const res = await fetch(
+    `${apiBase()}/v3/company/${realmId}/reports/TrialBalance?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`QBO API error: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+export async function fetchProfitAndLoss(
+  realmId: string,
+  startDate: string,
+  endDate: string
+): Promise<QboReportResponse> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+  });
+
+  const res = await fetch(
+    `${apiBase()}/v3/company/${realmId}/reports/ProfitAndLoss?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`QBO API error: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+export type ParsedPnLSection = {
+  section: string;
+  accounts: { name: string; amount: number }[];
+  total: number;
+};
+
+export function parseProfitAndLossReport(
+  report: QboReportResponse
+): ParsedPnLSection[] {
+  const sections: ParsedPnLSection[] = [];
+
+  for (const row of report.Rows?.Row || []) {
+    if (row.Header?.ColData && row.Rows?.Row) {
+      const sectionName = row.Header.ColData[0]?.value || "Unknown";
+      const accounts: { name: string; amount: number }[] = [];
+
+      for (const subRow of row.Rows.Row) {
+        if (subRow.ColData && subRow.ColData.length >= 2 && subRow.type !== "Section") {
+          const name = subRow.ColData[0]?.value || "";
+          const amount = parseFloat(subRow.ColData[1]?.value || "0") || 0;
+          if (name) accounts.push({ name, amount });
+        }
+        if (subRow.Rows?.Row) {
+          for (const innerRow of subRow.Rows.Row) {
+            if (innerRow.ColData && innerRow.ColData.length >= 2) {
+              const name = innerRow.ColData[0]?.value || "";
+              const amount = parseFloat(innerRow.ColData[1]?.value || "0") || 0;
+              if (name) accounts.push({ name, amount });
+            }
+          }
+        }
+      }
+
+      const summaryAmount = row.Summary?.ColData?.[1]?.value;
+      const total = parseFloat(summaryAmount || "0") || 0;
+      sections.push({ section: sectionName, accounts, total });
+    }
+  }
+
+  return sections;
+}
+
+export async function queryQbo(
+  realmId: string,
+  query: string
+): Promise<Record<string, unknown>> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const res = await fetch(
+    `${apiBase()}/v3/company/${realmId}/query?query=${encodeURIComponent(query)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`QBO query error: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+export async function fetchClasses(realmId: string): Promise<{ Id: string; Name: string; FullyQualifiedName: string; Active: boolean }[]> {
+  const result = await queryQbo(realmId, "SELECT * FROM Class MAXRESULTS 1000");
+  const qr = result.QueryResponse as { Class?: { Id: string; Name: string; FullyQualifiedName: string; Active: boolean }[] } | undefined;
+  return qr?.Class || [];
+}
+
+export async function fetchProfitAndLossByClass(
+  realmId: string,
+  startDate: string,
+  endDate: string,
+  classId: string
+): Promise<QboReportResponse> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+    class: classId,
+  });
+
+  const res = await fetch(
+    `${apiBase()}/v3/company/${realmId}/reports/ProfitAndLoss?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`QBO API error: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+export async function fetchBalanceSheet(
+  realmId: string,
+  startDate: string,
+  endDate: string
+): Promise<QboReportResponse> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+  });
+
+  const res = await fetch(
+    `${apiBase()}/v3/company/${realmId}/reports/BalanceSheet?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`QBO API error: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+export function parseBalanceSheetReport(
+  report: QboReportResponse
+): ParsedPnLSection[] {
+  const sections: ParsedPnLSection[] = [];
+
+  function walkSection(row: QboRow, parentName: string) {
+    const sectionName = row.Header?.ColData?.[0]?.value || parentName;
+    const accounts: { name: string; amount: number }[] = [];
+
+    if (row.Rows?.Row) {
+      for (const subRow of row.Rows.Row) {
+        if (subRow.Header?.ColData && subRow.Rows?.Row) {
+          walkSection(subRow, sectionName);
+        } else if (subRow.ColData && subRow.ColData.length >= 2 && subRow.type !== "Section") {
+          const name = subRow.ColData[0]?.value || "";
+          const amount = parseFloat(subRow.ColData[1]?.value || "0") || 0;
+          if (name) accounts.push({ name, amount });
+        }
+      }
+    }
+
+    const summaryAmount = row.Summary?.ColData?.[1]?.value;
+    const total = parseFloat(summaryAmount || "0") || 0;
+
+    if (accounts.length > 0 || total !== 0) {
+      sections.push({ section: sectionName, accounts, total });
+    }
+  }
+
+  for (const row of report.Rows?.Row || []) {
+    if (row.Header?.ColData && row.Rows?.Row) {
+      walkSection(row, "Unknown");
+    }
+  }
+
+  return sections;
+}
+
+export async function getConnectedRealm(): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from("qbo_tokens")
+    .select("realm_id")
+    .limit(1)
+    .single();
+  return data?.realm_id ?? null;
+}
+
+// QBO Report JSON types
+type QboColDesc = { ColTitle: string; ColType: string };
+type QboCellValue = { value?: string; id?: string };
+type QboRow = {
+  type?: string;
+  ColData?: QboCellValue[];
+  group?: string;
+  Summary?: { ColData: QboCellValue[] };
+  Rows?: { Row: QboRow[] };
+  Header?: { ColData: QboCellValue[] };
+};
+type QboReportResponse = {
+  Header: { ReportName: string; StartPeriod: string; EndPeriod: string };
+  Columns: { Column: QboColDesc[] };
+  Rows: { Row: QboRow[] };
+};
+
+export type ParsedTBRow = {
+  account_name: string;
+  account_type: string;
+  debit: number;
+  credit: number;
+  net_amount: number;
+};
+
+export function parseTrialBalanceReport(
+  report: QboReportResponse
+): ParsedTBRow[] {
+  const rows: ParsedTBRow[] = [];
+
+  function walkRows(qboRows: QboRow[], currentType: string) {
+    for (const row of qboRows) {
+      if (row.Header?.ColData) {
+        const typeName = row.Header.ColData[0]?.value || currentType;
+        if (row.Rows?.Row) {
+          walkRows(row.Rows.Row, typeName);
+        }
+      } else if (row.ColData && row.ColData.length >= 3) {
+        const accountName = row.ColData[0]?.value || "";
+        const debit = parseFloat(row.ColData[1]?.value || "0") || 0;
+        const credit = parseFloat(row.ColData[2]?.value || "0") || 0;
+
+        if (accountName && accountName !== "" && row.type !== "Section") {
+          rows.push({
+            account_name: accountName,
+            account_type: currentType,
+            debit,
+            credit,
+            net_amount: debit - credit,
+          });
+        }
+      }
+    }
+  }
+
+  if (report.Rows?.Row) {
+    walkRows(report.Rows.Row, "Unknown");
+  }
+
+  return rows;
+}
