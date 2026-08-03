@@ -13,6 +13,8 @@ type ConnectionStatus = {
 
 const REALM_LABELS: Record<string, string> = {
   "9130354139516116": "RTP Consolidated",
+  "1223699155": "RedTeam",
+  "791016560": "PASKR",
 };
 
 function realmLabel(realmId: string): string {
