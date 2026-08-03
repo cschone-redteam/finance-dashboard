@@ -2,11 +2,22 @@
 
 import { useEffect, useState } from "react";
 
+type ConnectedRealm = { realm_id: string; connected_at: string };
+
 type ConnectionStatus = {
   connected: boolean;
   realm_id?: string;
   connected_at?: string;
+  realms?: ConnectedRealm[];
 };
+
+const REALM_LABELS: Record<string, string> = {
+  "9130354139516116": "RTP Consolidated",
+};
+
+function realmLabel(realmId: string): string {
+  return REALM_LABELS[realmId] || `Company ${realmId.slice(-6)}`;
+}
 
 export function QboConnect({ onStatusChange }: { onStatusChange?: (connected: boolean) => void }) {
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
@@ -32,8 +43,12 @@ export function QboConnect({ onStatusChange }: { onStatusChange?: (connected: bo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function disconnect() {
-    await fetch("/api/qbo/disconnect", { method: "POST" });
+  async function disconnectRealm(realmId: string) {
+    await fetch("/api/qbo/disconnect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ realmId }),
+    });
     await checkStatus();
   }
 
@@ -46,24 +61,37 @@ export function QboConnect({ onStatusChange }: { onStatusChange?: (connected: bo
     );
   }
 
-  if (status?.connected) {
+  if (status?.connected && status.realms) {
     return (
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 text-sm">
-          <div className="w-2 h-2 rounded-full bg-green-500" />
-          <span className="text-green-700 dark:text-green-400 font-medium">
-            Connected
-          </span>
-          <span className="text-gray-400 dark:text-gray-500">
-            Realm {status.realm_id}
-          </span>
-        </div>
-        <button
-          onClick={disconnect}
-          className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400 underline"
+      <div className="flex flex-col gap-2 items-end">
+        {status.realms.map((r) => (
+          <div key={r.realm_id} className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm">
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="text-green-700 dark:text-green-400 font-medium">
+                {realmLabel(r.realm_id)}
+              </span>
+              <span className="text-gray-400 dark:text-gray-500 text-xs">
+                {r.realm_id}
+              </span>
+            </div>
+            <button
+              onClick={() => disconnectRealm(r.realm_id)}
+              className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400 underline"
+            >
+              Disconnect
+            </button>
+          </div>
+        ))}
+        <a
+          href="/api/qbo/connect"
+          className="inline-flex items-center gap-1.5 text-xs text-[#40A4EB] hover:text-blue-700 dark:hover:text-blue-300 font-medium"
         >
-          Disconnect
-        </button>
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          Connect another company
+        </a>
       </div>
     );
   }
