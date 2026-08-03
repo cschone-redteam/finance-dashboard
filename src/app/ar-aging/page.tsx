@@ -105,6 +105,19 @@ const REALM_LABELS: Record<string, string> = Object.fromEntries(
   AR_COMPANIES.map((c) => [c.id, c.label])
 );
 
+const INTERCOMPANY_PATTERNS = [
+  "paskr",
+  "redteam",
+  "red team",
+  "rtp consolidated",
+  "reserve",
+];
+
+function isIntercompany(customer: string): boolean {
+  const lower = customer.toLowerCase();
+  return INTERCOMPANY_PATTERNS.some((p) => lower.includes(p));
+}
+
 function realmLabel(realmId: string): string {
   return REALM_LABELS[realmId] || `Company ${realmId.slice(-6)}`;
 }
@@ -190,7 +203,9 @@ export default function ArAgingPage() {
     }
   }
 
-  const customers = buildCustomerSummaries(rows);
+  const customers = buildCustomerSummaries(
+    rows.filter((r) => !isIntercompany(r.customer))
+  );
 
   const bucketTotals = BUCKETS.map((_, i) =>
     customers.reduce((sum, c) => sum + c.bucketAmounts[i], 0)
