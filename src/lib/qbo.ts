@@ -347,6 +347,106 @@ export function parseBalanceSheetReport(
   return sections;
 }
 
+export async function fetchAgedReceivables(
+  realmId: string,
+  reportDate: string
+): Promise<QboReportResponse> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const params = new URLSearchParams({
+    report_date: reportDate,
+    aging_method: "Report_Date",
+  });
+
+  const res = await fetch(
+    `${apiBase()}/v3/company/${realmId}/reports/AgedReceivableDetail?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`QBO API error: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+export type ParsedArAgingRow = {
+  customer: string;
+  transaction_type: string;
+  transaction_date: string;
+  due_date: string;
+  num: string;
+  amount: number;
+  open_balance: number;
+  days_past_due: number;
+};
+
+export function parseAgedReceivablesReport(
+  report: QboReportResponse
+): ParsedArAgingRow[] {
+  const rows: ParsedArAgingRow[] = [];
+  const columns = report.Columns?.Column?.map((c) => c.ColTitle) || [];
+
+  function findColIdx(search: string): number {
+    return columns.findIndex((c) => c.toLowerCase().includes(search.toLowerCase()));
+  }
+
+  const customerIdx = findColIdx("Customer");
+  const txTypeIdx = findColIdx("Transaction Type");
+  const dateIdx = findColIdx("Date");
+  const numIdx = findColIdx("Num");
+  const dueDateIdx = findColIdx("Due Date");
+  const amountIdx = findColIdx("Amount");
+  const balanceIdx = findColIdx("Open Balance");
+
+  function walkRows(qboRows: QboRow[]) {
+    for (const row of qboRows) {
+      if (row.Rows?.Row) {
+        walkRows(row.Rows.Row);
+      }
+      if (row.ColData && row.ColData.length >= 2 && row.type === "Data") {
+        const openBalance = parseFloat(row.ColData[balanceIdx]?.value || "0") || 0;
+        if (openBalance === 0) continue;
+
+        const customer = customerIdx >= 0
+          ? (row.ColData[customerIdx]?.value || "Unknown")
+          : "Unknown";
+        const txDate = dateIdx >= 0 ? (row.ColData[dateIdx]?.value || "") : "";
+        const dueDate = dueDateIdx >= 0 ? (row.ColData[dueDateIdx]?.value || "") : "";
+
+        let daysPastDue = 0;
+        if (dueDate) {
+          const due = new Date(dueDate);
+          const now = new Date();
+          daysPastDue = Math.max(0, Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)));
+        }
+
+        rows.push({
+          customer,
+          transaction_type: txTypeIdx >= 0 ? (row.ColData[txTypeIdx]?.value || "") : "",
+          transaction_date: txDate,
+          due_date: dueDate,
+          num: numIdx >= 0 ? (row.ColData[numIdx]?.value || "") : "",
+          amount: amountIdx >= 0 ? (parseFloat(row.ColData[amountIdx]?.value || "0") || 0) : 0,
+          open_balance: openBalance,
+          days_past_due: daysPastDue,
+        });
+      }
+    }
+  }
+
+  if (report.Rows?.Row) {
+    walkRows(report.Rows.Row);
+  }
+
+  return rows;
+}
+
 export async function getConnectedRealm(): Promise<string | null> {
   const { data } = await supabaseAdmin
     .from("qbo_tokens")
@@ -354,6 +454,14 @@ export async function getConnectedRealm(): Promise<string | null> {
     .limit(1)
     .single();
   return data?.realm_id ?? null;
+}
+
+export async function getAllConnectedRealms(): Promise<{ realm_id: string; created_at: string }[]> {
+  const { data } = await supabaseAdmin
+    .from("qbo_tokens")
+    .select("realm_id, created_at")
+    .order("created_at");
+  return data || [];
 }
 
 // QBO Report JSON types

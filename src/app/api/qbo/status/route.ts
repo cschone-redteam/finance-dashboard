@@ -2,20 +2,25 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 
 export async function GET() {
-  const { data } = await supabaseAdmin
+  const { data: allRealms } = await supabaseAdmin
     .from("qbo_tokens")
     .select("realm_id, expires_at, created_at")
-    .limit(1)
-    .single();
+    .order("created_at");
 
-  if (!data) {
+  if (!allRealms || allRealms.length === 0) {
     return NextResponse.json({ connected: false });
   }
 
+  const primary = allRealms[0];
+
   return NextResponse.json({
     connected: true,
-    realm_id: data.realm_id,
-    expires_at: data.expires_at,
-    connected_at: data.created_at,
+    realm_id: primary.realm_id,
+    expires_at: primary.expires_at,
+    connected_at: primary.created_at,
+    realms: allRealms.map((r) => ({
+      realm_id: r.realm_id,
+      connected_at: r.created_at,
+    })),
   });
 }
