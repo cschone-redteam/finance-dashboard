@@ -447,6 +447,23 @@ export function parseAgedReceivablesReport(
   return rows;
 }
 
+export async function fetchCustomerCount(realmId: string): Promise<number> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const query = encodeURIComponent("SELECT COUNT(*) FROM Customer WHERE Active = true");
+  const res = await fetch(
+    `${apiBase()}/v3/company/${realmId}/query?query=${query}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return data.QueryResponse?.totalCount ?? 0;
+}
+
 export async function getConnectedRealm(): Promise<string | null> {
   const { data } = await supabaseAdmin
     .from("qbo_tokens")

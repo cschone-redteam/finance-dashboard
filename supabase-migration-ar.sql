@@ -7,6 +7,7 @@ create table if not exists ar_aging_cache (
   realm_label text,
   report_date text not null,
   rows jsonb not null default '[]',
+  total_customers int default 0,
   synced_at timestamptz default now()
 );
 

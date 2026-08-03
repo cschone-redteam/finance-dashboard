@@ -122,7 +122,7 @@ function realmLabel(realmId: string): string {
   return REALM_LABELS[realmId] || `Company ${realmId.slice(-6)}`;
 }
 
-type CachedRealm = { realm_id: string; realm_label: string | null; synced_at: string };
+type CachedRealm = { realm_id: string; realm_label: string | null; synced_at: string; total_customers?: number | null };
 
 export default function ArAgingPage() {
   const [qboConnected, setQboConnected] = useState(false);
@@ -139,6 +139,7 @@ export default function ArAgingPage() {
   const [realms, setRealms] = useState<ConnectedRealm[]>([]);
   const [cachedRealms, setCachedRealms] = useState<CachedRealm[]>([]);
   const [selectedRealm, setSelectedRealm] = useState<string>("");
+  const [companySummaries, setCompanySummaries] = useState<Record<string, { pastDue: number; totalWithAr: number; totalCustomers: number | null }>>({});
 
   useEffect(() => {
     fetch("/api/qbo/status")
@@ -169,6 +170,31 @@ export default function ArAgingPage() {
 
   useEffect(() => {
     setSelectedRealm(AR_COMPANIES[0].id);
+    async function loadAllSummaries() {
+      const summaries: Record<string, { pastDue: number; totalWithAr: number; totalCustomers: number | null }> = {};
+      await Promise.all(
+        AR_COMPANIES.map(async (company) => {
+          try {
+            const res = await fetch(`/api/ar?realmId=${company.id}`);
+            const data = await res.json();
+            const companyRows: ArRow[] = (data.rows || []).filter(
+              (r: ArRow) => !isIntercompany(r.customer)
+            );
+            const custs = buildCustomerSummaries(companyRows);
+            const cachedRealm = data.cachedRealms?.find((cr: CachedRealm) => cr.realm_id === company.id);
+            summaries[company.id] = {
+              pastDue: custs.filter((c) => c.oldestDue > 0).length,
+              totalWithAr: custs.length,
+              totalCustomers: data.totalCustomers ?? cachedRealm?.total_customers ?? null,
+            };
+          } catch {
+            summaries[company.id] = { pastDue: 0, totalWithAr: 0, totalCustomers: null };
+          }
+        })
+      );
+      setCompanySummaries(summaries);
+    }
+    loadAllSummaries();
   }, []);
 
   useEffect(() => {
@@ -196,6 +222,16 @@ export default function ArAgingPage() {
       setRows(data.rows);
       setReportDate(data.reportDate);
       setSyncedAt(data.synced_at);
+      const freshRows: ArRow[] = (data.rows || []).filter((r: ArRow) => !isIntercompany(r.customer));
+      const freshCusts = buildCustomerSummaries(freshRows);
+      setCompanySummaries((prev) => ({
+        ...prev,
+        [selectedRealm]: {
+          pastDue: freshCusts.filter((c) => c.oldestDue > 0).length,
+          totalWithAr: freshCusts.length,
+          totalCustomers: data.totalCustomers ?? prev[selectedRealm]?.totalCustomers ?? null,
+        },
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to sync AR data");
     } finally {
@@ -384,6 +420,23 @@ export default function ArAgingPage() {
                     {" "}/ {customers.length}
                   </span>
                 </p>
+                {Object.keys(companySummaries).length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {AR_COMPANIES.map((company) => {
+                      const s = companySummaries[company.id];
+                      if (!s) return null;
+                      const total = s.totalCustomers ?? s.totalWithAr;
+                      return (
+                        <div key={company.id} className="flex items-center justify-between text-xs">
+                          <span className="text-gray-500 dark:text-gray-400">{company.label}</span>
+                          <span className={`tabular-nums font-medium ${s.pastDue > 0 ? "text-amber-600 dark:text-amber-400" : "text-gray-500"}`}>
+                            {s.pastDue} / {total}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
