@@ -104,17 +104,22 @@ function realmLabel(realmId: string): string {
   return REALM_LABELS[realmId] || `Company ${realmId.slice(-6)}`;
 }
 
+type CachedRealm = { realm_id: string; realm_label: string | null; synced_at: string };
+
 export default function ArAgingPage() {
   const [qboConnected, setQboConnected] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [rows, setRows] = useState<ArRow[]>([]);
   const [reportDate, setReportDate] = useState<string>("");
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("totalBalance");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [filterBucket, setFilterBucket] = useState<number | null>(null);
   const [realms, setRealms] = useState<ConnectedRealm[]>([]);
+  const [cachedRealms, setCachedRealms] = useState<CachedRealm[]>([]);
   const [selectedRealm, setSelectedRealm] = useState<string>("");
 
   useEffect(() => {
@@ -128,29 +133,60 @@ export default function ArAgingPage() {
       });
   }, [qboConnected]);
 
-  const fetchData = useCallback(async () => {
-    if (!selectedRealm) return;
+  const loadCachedData = useCallback(async (realmId?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/ar?realmId=${selectedRealm}`);
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to fetch");
-      }
+      const url = realmId ? `/api/ar?realmId=${realmId}` : "/api/ar";
+      const res = await fetch(url);
       const data = await res.json();
-      setRows(data.rows);
-      setReportDate(data.reportDate);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch AR data");
+      setRows(data.rows || []);
+      setReportDate(data.reportDate || "");
+      setSyncedAt(data.synced_at || null);
+      if (data.cachedRealms) setCachedRealms(data.cachedRealms);
+      if (data.realmId && !selectedRealm) setSelectedRealm(data.realmId);
+    } catch {
+      setRows([]);
     } finally {
       setLoading(false);
     }
   }, [selectedRealm]);
 
   useEffect(() => {
-    if (qboConnected && selectedRealm) fetchData();
-  }, [qboConnected, selectedRealm, fetchData]);
+    loadCachedData();
+  }, []);
+
+  useEffect(() => {
+    if (selectedRealm) loadCachedData(selectedRealm);
+  }, [selectedRealm]);
+
+  async function syncFromQbo() {
+    if (!selectedRealm) return;
+    setSyncing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/ar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          realmId: selectedRealm,
+          realmLabel: realmLabel(selectedRealm),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Sync failed");
+      }
+      const data = await res.json();
+      setRows(data.rows);
+      setReportDate(data.reportDate);
+      setSyncedAt(data.synced_at);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to sync AR data");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const customers = buildCustomerSummaries(rows);
 
@@ -202,65 +238,89 @@ export default function ArAgingPage() {
           <QboConnect onStatusChange={setQboConnected} />
         </div>
 
-        {/* Entity / Realm Selector */}
-        {qboConnected && realms.length > 0 && (
-          <div className="flex items-center gap-3 mb-6">
-            <label className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wider">
-              QBO Company
-            </label>
-            <select
-              value={selectedRealm}
-              onChange={(e) => setSelectedRealm(e.target.value)}
-              className="text-sm bg-white dark:bg-white/[0.06] border border-gray-200 dark:border-white/[0.1] rounded-lg px-3 py-1.5 text-gray-900 dark:text-gray-100"
-            >
-              {realms.map((r) => (
-                <option key={r.realm_id} value={r.realm_id}>
-                  {realmLabel(r.realm_id)}
-                </option>
-              ))}
-            </select>
-            {realms.length === 1 && (
-              <p className="text-xs text-gray-400">
-                Connect additional QBO companies to switch between entities
-              </p>
-            )}
-          </div>
-        )}
+        {/* Entity / Realm Selector + Sync Controls */}
+        {(() => {
+          const allRealmIds = new Map<string, string>();
+          for (const r of realms) allRealmIds.set(r.realm_id, realmLabel(r.realm_id));
+          for (const c of cachedRealms) {
+            if (!allRealmIds.has(c.realm_id)) {
+              allRealmIds.set(c.realm_id, c.realm_label || realmLabel(c.realm_id));
+            }
+          }
+          const realmOptions = [...allRealmIds.entries()];
 
-        {!qboConnected ? (
-          <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 p-16 text-center">
-            <p className="text-gray-400 text-lg font-medium">
-              Connect to QuickBooks to view AR aging
-            </p>
-          </div>
-        ) : loading ? (
+          if (realmOptions.length === 0 && !qboConnected) return null;
+
+          return (
+            <div className="flex items-center gap-3 mb-6">
+              {realmOptions.length > 0 && (
+                <>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wider">
+                    QBO Company
+                  </label>
+                  <select
+                    value={selectedRealm}
+                    onChange={(e) => setSelectedRealm(e.target.value)}
+                    className="text-sm bg-white dark:bg-white/[0.06] border border-gray-200 dark:border-white/[0.1] rounded-lg px-3 py-1.5 text-gray-900 dark:text-gray-100"
+                  >
+                    {realmOptions.map(([id, label]) => (
+                      <option key={id} value={id}>{label}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {qboConnected && selectedRealm && (
+                <button
+                  onClick={syncFromQbo}
+                  disabled={syncing}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#EF373E] hover:bg-red-600 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors"
+                >
+                  {syncing ? (
+                    <>
+                      <div className="w-3 h-3 border border-white/40 border-t-white rounded-full animate-spin" />
+                      Syncing...
+                    </>
+                  ) : (
+                    "Sync from QBO"
+                  )}
+                </button>
+              )}
+              {syncedAt && (
+                <span className="text-xs text-gray-400">
+                  Last synced: {new Date(syncedAt).toLocaleString()}
+                </span>
+              )}
+            </div>
+          );
+        })()}
+
+        {loading ? (
           <div className="text-center py-20">
             <div className="inline-block w-8 h-8 border-2 border-gray-300 border-t-[#EF373E] rounded-full animate-spin" />
-            <p className="text-sm text-gray-500 mt-4">
-              Pulling aged receivables from QBO...
-            </p>
+            <p className="text-sm text-gray-500 mt-4">Loading AR data...</p>
           </div>
         ) : error ? (
           <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl p-6 text-center">
             <p className="text-red-600 dark:text-red-400 font-medium">{error}</p>
-            <button
-              onClick={fetchData}
-              className="mt-3 text-sm text-red-500 hover:text-red-700 underline"
-            >
-              Retry
-            </button>
+            {qboConnected && (
+              <button
+                onClick={syncFromQbo}
+                className="mt-3 text-sm text-red-500 hover:text-red-700 underline"
+              >
+                Retry sync
+              </button>
+            )}
           </div>
         ) : rows.length === 0 ? (
           <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 p-16 text-center">
             <p className="text-gray-400 text-lg font-medium">
-              No open receivables found
+              No AR aging data available
             </p>
-            <button
-              onClick={fetchData}
-              className="mt-3 text-sm text-[#40A4EB] hover:underline"
-            >
-              Refresh
-            </button>
+            <p className="text-sm text-gray-400 mt-2">
+              {qboConnected
+                ? "Click \"Sync from QBO\" to pull the latest aged receivables."
+                : "An admin with QBO access needs to sync this data first."}
+            </p>
           </div>
         ) : (
           <>
@@ -278,12 +338,6 @@ export default function ArAgingPage() {
                 {" · "}
                 {customers.length} customers · {rows.length} open invoices
               </p>
-              <button
-                onClick={fetchData}
-                className="text-xs text-[#40A4EB] hover:underline"
-              >
-                Refresh
-              </button>
             </div>
 
             {/* KPI Cards */}
