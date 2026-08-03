@@ -10,49 +10,33 @@ export async function GET(request: NextRequest) {
   const realmId = request.nextUrl.searchParams.get("realmId");
 
   try {
-    if (realmId) {
-      const { data } = await supabaseAdmin
-        .from("ar_aging_cache")
-        .select("*")
-        .eq("realm_id", realmId)
-        .single();
-
-      if (data) {
-        return NextResponse.json({
-          rows: data.rows,
-          reportDate: data.report_date,
-          realmId: data.realm_id,
-          realmLabel: data.realm_label,
-          synced_at: data.synced_at,
-        });
-      }
-    }
-
     const { data: allCached } = await supabaseAdmin
       .from("ar_aging_cache")
       .select("*")
       .order("synced_at", { ascending: false });
 
-    if (allCached && allCached.length > 0) {
-      const target = realmId
-        ? allCached.find((c) => c.realm_id === realmId) || allCached[0]
-        : allCached[0];
+    const cachedRealms = (allCached || []).map((c) => ({
+      realm_id: c.realm_id,
+      realm_label: c.realm_label,
+      synced_at: c.synced_at,
+    }));
 
+    const target = realmId
+      ? allCached?.find((c) => c.realm_id === realmId)
+      : allCached?.[0];
+
+    if (target) {
       return NextResponse.json({
         rows: target.rows,
         reportDate: target.report_date,
         realmId: target.realm_id,
         realmLabel: target.realm_label,
         synced_at: target.synced_at,
-        cachedRealms: allCached.map((c) => ({
-          realm_id: c.realm_id,
-          realm_label: c.realm_label,
-          synced_at: c.synced_at,
-        })),
+        cachedRealms,
       });
     }
 
-    return NextResponse.json({ rows: [], reportDate: null, synced_at: null });
+    return NextResponse.json({ rows: [], reportDate: null, synced_at: null, cachedRealms });
   } catch (err) {
     console.warn("AR cache read failed:", err);
     return NextResponse.json({ rows: [], reportDate: null, synced_at: null });

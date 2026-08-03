@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { QboConnect } from "@/components/qbo-connect";
 
 type ArRow = {
@@ -96,11 +96,14 @@ type SortDir = "asc" | "desc";
 
 type ConnectedRealm = { realm_id: string; connected_at: string };
 
-const REALM_LABELS: Record<string, string> = {
-  "9130354139516116": "RTP Consolidated",
-  "1223699155": "RedTeam",
-  "791016560": "PASKR",
-};
+const AR_COMPANIES = [
+  { id: "1223699155", label: "RedTeam" },
+  { id: "791016560", label: "PASKR" },
+] as const;
+
+const REALM_LABELS: Record<string, string> = Object.fromEntries(
+  AR_COMPANIES.map((c) => [c.id, c.label])
+);
 
 function realmLabel(realmId: string): string {
   return REALM_LABELS[realmId] || `Company ${realmId.slice(-6)}`;
@@ -130,32 +133,29 @@ export default function ArAgingPage() {
       .then((data) => {
         if (data.realms?.length) {
           setRealms(data.realms);
-          if (!selectedRealm) setSelectedRealm(data.realms[0].realm_id);
         }
       });
   }, [qboConnected]);
 
-  const loadCachedData = useCallback(async (realmId?: string) => {
+  async function loadCachedData(realmId: string) {
     setLoading(true);
     setError(null);
     try {
-      const url = realmId ? `/api/ar?realmId=${realmId}` : "/api/ar";
-      const res = await fetch(url);
+      const res = await fetch(`/api/ar?realmId=${realmId}`);
       const data = await res.json();
       setRows(data.rows || []);
       setReportDate(data.reportDate || "");
       setSyncedAt(data.synced_at || null);
       if (data.cachedRealms) setCachedRealms(data.cachedRealms);
-      if (data.realmId && !selectedRealm) setSelectedRealm(data.realmId);
     } catch {
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [selectedRealm]);
+  }
 
   useEffect(() => {
-    loadCachedData();
+    setSelectedRealm(AR_COMPANIES[0].id);
   }, []);
 
   useEffect(() => {
@@ -240,61 +240,50 @@ export default function ArAgingPage() {
           <QboConnect onStatusChange={setQboConnected} />
         </div>
 
-        {/* Entity / Realm Selector + Sync Controls */}
-        {(() => {
-          const allRealmIds = new Map<string, string>();
-          for (const r of realms) allRealmIds.set(r.realm_id, realmLabel(r.realm_id));
-          for (const c of cachedRealms) {
-            if (!allRealmIds.has(c.realm_id)) {
-              allRealmIds.set(c.realm_id, c.realm_label || realmLabel(c.realm_id));
-            }
-          }
-          const realmOptions = [...allRealmIds.entries()];
-
-          if (realmOptions.length === 0 && !qboConnected) return null;
-
-          return (
-            <div className="flex items-center gap-3 mb-6">
-              {realmOptions.length > 0 && (
+        {/* Company Toggle + Sync Controls */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="inline-flex rounded-lg border border-gray-200 dark:border-white/[0.1] overflow-hidden">
+            {AR_COMPANIES.map((company) => (
+              <button
+                key={company.id}
+                onClick={() => setSelectedRealm(company.id)}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  selectedRealm === company.id
+                    ? "bg-[#EF373E] text-white"
+                    : "bg-white dark:bg-white/[0.06] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/[0.08]"
+                }`}
+              >
+                {company.label}
+              </button>
+            ))}
+          </div>
+          {qboConnected && selectedRealm && (
+            <button
+              onClick={syncFromQbo}
+              disabled={syncing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 dark:bg-white/[0.1] hover:bg-gray-800 dark:hover:bg-white/[0.15] disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors"
+            >
+              {syncing ? (
                 <>
-                  <label className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wider">
-                    QBO Company
-                  </label>
-                  <select
-                    value={selectedRealm}
-                    onChange={(e) => setSelectedRealm(e.target.value)}
-                    className="text-sm bg-white dark:bg-white/[0.06] border border-gray-200 dark:border-white/[0.1] rounded-lg px-3 py-1.5 text-gray-900 dark:text-gray-100"
-                  >
-                    {realmOptions.map(([id, label]) => (
-                      <option key={id} value={id}>{label}</option>
-                    ))}
-                  </select>
+                  <div className="w-3 h-3 border border-white/40 border-t-white rounded-full animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182M21.015 4.356v4.992" />
+                  </svg>
+                  Sync {AR_COMPANIES.find((c) => c.id === selectedRealm)?.label}
                 </>
               )}
-              {qboConnected && selectedRealm && (
-                <button
-                  onClick={syncFromQbo}
-                  disabled={syncing}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#EF373E] hover:bg-red-600 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors"
-                >
-                  {syncing ? (
-                    <>
-                      <div className="w-3 h-3 border border-white/40 border-t-white rounded-full animate-spin" />
-                      Syncing...
-                    </>
-                  ) : (
-                    "Sync from QBO"
-                  )}
-                </button>
-              )}
-              {syncedAt && (
-                <span className="text-xs text-gray-400">
-                  Last synced: {new Date(syncedAt).toLocaleString()}
-                </span>
-              )}
-            </div>
-          );
-        })()}
+            </button>
+          )}
+          {syncedAt && (
+            <span className="text-xs text-gray-400">
+              Last synced: {new Date(syncedAt).toLocaleString()}
+            </span>
+          )}
+        </div>
 
         {loading ? (
           <div className="text-center py-20">
