@@ -91,7 +91,7 @@ function buildCustomerSummaries(rows: ArRow[]): CustomerSummary[] {
   return [...map.values()].sort((a, b) => b.totalBalance - a.totalBalance);
 }
 
-type SortField = "customer" | "totalBalance" | "oldestDue" | "invoiceCount";
+type SortField = "customer" | "totalBalance" | "oldestDue" | "invoiceCount" | "bucket0" | "bucket1" | "bucket2" | "bucket3" | "bucket4";
 type SortDir = "asc" | "desc";
 
 type ConnectedRealm = { realm_id: string; connected_at: string };
@@ -222,7 +222,12 @@ export default function ArAgingPage() {
   const sorted = [...filtered].sort((a, b) => {
     const mul = sortDir === "asc" ? 1 : -1;
     if (sortField === "customer") return mul * a.customer.localeCompare(b.customer);
-    return mul * (a[sortField] - b[sortField]);
+    const bucketMatch = sortField.match(/^bucket(\d)$/);
+    if (bucketMatch) {
+      const idx = parseInt(bucketMatch[1]);
+      return mul * (a.bucketAmounts[idx] - b.bucketAmounts[idx]);
+    }
+    return mul * (a[sortField as "totalBalance" | "oldestDue" | "invoiceCount"] - b[sortField as "totalBalance" | "oldestDue" | "invoiceCount"]);
   });
 
   function toggleSort(field: SortField) {
@@ -465,12 +470,13 @@ export default function ArAgingPage() {
                       >
                         Invoices{sortArrow("invoiceCount")}
                       </th>
-                      {BUCKETS.map((b) => (
+                      {BUCKETS.map((b, i) => (
                         <th
                           key={b.label}
-                          className="py-3 px-4 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                          onClick={() => toggleSort(`bucket${i}` as SortField)}
+                          className="py-3 px-4 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
                         >
-                          {b.label}
+                          {b.label}{sortArrow(`bucket${i}` as SortField)}
                         </th>
                       ))}
                       <th
