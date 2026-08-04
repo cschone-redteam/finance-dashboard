@@ -558,7 +558,7 @@ export default function ArAgingPage() {
   const [qboConnected, setQboConnected] = useState(false);
 
   return (
-    <main className="ml-[220px] min-h-screen bg-gray-50 dark:bg-[#0a0a0a] p-8">
+    <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
       <div className="mx-auto">
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
