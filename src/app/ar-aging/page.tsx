@@ -23,11 +23,11 @@ type AgingBucket = {
 };
 
 const BUCKETS: AgingBucket[] = [
-  { label: "Current", min: 0, max: 0, color: "text-emerald-600 dark:text-emerald-400", bgColor: "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800" },
-  { label: "1–30", min: 1, max: 30, color: "text-blue-600 dark:text-blue-400", bgColor: "bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800" },
+  { label: "Current (1–30)", min: 0, max: 30, color: "text-emerald-600 dark:text-emerald-400", bgColor: "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800" },
   { label: "31–60", min: 31, max: 60, color: "text-amber-600 dark:text-amber-400", bgColor: "bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800" },
   { label: "61–90", min: 61, max: 90, color: "text-orange-600 dark:text-orange-400", bgColor: "bg-orange-50 dark:bg-orange-950/40 border-orange-200 dark:border-orange-800" },
-  { label: "90+", min: 91, max: Infinity, color: "text-red-600 dark:text-red-400", bgColor: "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800" },
+  { label: "91–120", min: 91, max: 120, color: "text-red-500 dark:text-red-400", bgColor: "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800" },
+  { label: "120+", min: 121, max: Infinity, color: "text-red-700 dark:text-red-300", bgColor: "bg-red-100 dark:bg-red-950/60 border-red-300 dark:border-red-700" },
 ];
 
 function bucketForDays(days: number): AgingBucket {
@@ -122,7 +122,6 @@ function realmLabel(realmId: string): string {
   return REALM_LABELS[realmId] || `Company ${realmId.slice(-6)}`;
 }
 
-type CachedRealm = { realm_id: string; realm_label: string | null; synced_at: string; total_customers?: number | null };
 
 export default function ArAgingPage() {
   const [qboConnected, setQboConnected] = useState(false);
@@ -137,9 +136,7 @@ export default function ArAgingPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [filterBucket, setFilterBucket] = useState<number | null>(null);
   const [realms, setRealms] = useState<ConnectedRealm[]>([]);
-  const [cachedRealms, setCachedRealms] = useState<CachedRealm[]>([]);
   const [selectedRealm, setSelectedRealm] = useState<string>("");
-  const [companySummaries, setCompanySummaries] = useState<Record<string, { pastDue: number; totalWithAr: number; totalCustomers: number | null }>>({});
 
   useEffect(() => {
     fetch("/api/qbo/status")
@@ -160,7 +157,6 @@ export default function ArAgingPage() {
       setRows(data.rows || []);
       setReportDate(data.reportDate || "");
       setSyncedAt(data.synced_at || null);
-      if (data.cachedRealms) setCachedRealms(data.cachedRealms);
     } catch {
       setRows([]);
     } finally {
@@ -170,31 +166,6 @@ export default function ArAgingPage() {
 
   useEffect(() => {
     setSelectedRealm(AR_COMPANIES[0].id);
-    async function loadAllSummaries() {
-      const summaries: Record<string, { pastDue: number; totalWithAr: number; totalCustomers: number | null }> = {};
-      await Promise.all(
-        AR_COMPANIES.map(async (company) => {
-          try {
-            const res = await fetch(`/api/ar?realmId=${company.id}`);
-            const data = await res.json();
-            const companyRows: ArRow[] = (data.rows || []).filter(
-              (r: ArRow) => !isIntercompany(r.customer)
-            );
-            const custs = buildCustomerSummaries(companyRows);
-            const cachedRealm = data.cachedRealms?.find((cr: CachedRealm) => cr.realm_id === company.id);
-            summaries[company.id] = {
-              pastDue: custs.filter((c) => c.oldestDue > 0).length,
-              totalWithAr: custs.length,
-              totalCustomers: data.totalCustomers ?? cachedRealm?.total_customers ?? null,
-            };
-          } catch {
-            summaries[company.id] = { pastDue: 0, totalWithAr: 0, totalCustomers: null };
-          }
-        })
-      );
-      setCompanySummaries(summaries);
-    }
-    loadAllSummaries();
   }, []);
 
   useEffect(() => {
@@ -222,16 +193,6 @@ export default function ArAgingPage() {
       setRows(data.rows);
       setReportDate(data.reportDate);
       setSyncedAt(data.synced_at);
-      const freshRows: ArRow[] = (data.rows || []).filter((r: ArRow) => !isIntercompany(r.customer));
-      const freshCusts = buildCustomerSummaries(freshRows);
-      setCompanySummaries((prev) => ({
-        ...prev,
-        [selectedRealm]: {
-          pastDue: freshCusts.filter((c) => c.oldestDue > 0).length,
-          totalWithAr: freshCusts.length,
-          totalCustomers: data.totalCustomers ?? prev[selectedRealm]?.totalCustomers ?? null,
-        },
-      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to sync AR data");
     } finally {
@@ -248,7 +209,7 @@ export default function ArAgingPage() {
   );
   const totalAr = bucketTotals.reduce((a, b) => a + b, 0);
   const totalPastDue = bucketTotals.slice(1).reduce((a, b) => a + b, 0);
-  const pastDueCustomers = customers.filter((c) => c.oldestDue > 0).length;
+
 
   const filtered =
     filterBucket !== null
@@ -388,7 +349,7 @@ export default function ArAgingPage() {
             </div>
 
             {/* KPI Cards */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="bg-white dark:bg-white/[0.04] border border-gray-200 dark:border-white/[0.06] rounded-xl p-5">
                 <p className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wider">
                   Total AR
@@ -408,34 +369,6 @@ export default function ArAgingPage() {
                   <p className="text-xs text-gray-500 mt-1">
                     {((totalPastDue / totalAr) * 100).toFixed(1)}% of total AR
                   </p>
-                )}
-              </div>
-              <div className="bg-white dark:bg-white/[0.04] border border-gray-200 dark:border-white/[0.06] rounded-xl p-5">
-                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wider">
-                  Customers Past Due
-                </p>
-                <p className={`text-2xl font-bold mt-1 tabular-nums ${pastDueCustomers > 0 ? "text-amber-600 dark:text-amber-400" : "text-gray-900 dark:text-white"}`}>
-                  {pastDueCustomers}
-                  <span className="text-sm font-normal text-gray-500">
-                    {" "}/ {customers.length}
-                  </span>
-                </p>
-                {Object.keys(companySummaries).length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {AR_COMPANIES.map((company) => {
-                      const s = companySummaries[company.id];
-                      if (!s) return null;
-                      const total = s.totalCustomers ?? s.totalWithAr;
-                      return (
-                        <div key={company.id} className="flex items-center justify-between text-xs">
-                          <span className="text-gray-500 dark:text-gray-400">{company.label}</span>
-                          <span className={`tabular-nums font-medium ${s.pastDue > 0 ? "text-amber-600 dark:text-amber-400" : "text-gray-500"}`}>
-                            {s.pastDue} / {total}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
                 )}
               </div>
             </div>
