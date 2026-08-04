@@ -559,7 +559,7 @@ export default function ArAgingPage() {
 
   return (
     <main className="ml-[220px] min-h-screen bg-gray-50 dark:bg-[#0a0a0a] p-8">
-      <div className="max-w-[1600px] mx-auto">
+      <div className="mx-auto">
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
