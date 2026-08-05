@@ -493,8 +493,8 @@ export type CashForecastMonth = {
   month: string;
   vendorPayments: number;
   payroll: number;
-  fourOneK: number;
-  groupHealth: number;
+  payrollTaxes: number;
+  employeeBenefits: number;
   ramp: number;
   contractorPayments: number;
   cashReceipts: number;
@@ -533,11 +533,11 @@ async function queryAllPages(
 }
 
 const OUTFLOW_PATTERNS: { key: keyof Omit<CashForecastMonth, "month" | "cashReceipts" | "vendorPayments">; patterns: string[] }[] = [
-  { key: "payroll", patterns: ["payroll", "wages", "salary", "salaries", "officer compensation", "adp", "gusto", "paychex"] },
-  { key: "fourOneK", patterns: ["401k", "401(k)", "retirement", "simple ira"] },
-  { key: "groupHealth", patterns: ["health insurance", "group health", "medical insurance", "dental", "vision", "health benefit"] },
+  { key: "payroll", patterns: ["staff payroll", "payroll", "wages", "salary", "salaries", "officer compensation", "adp", "gusto", "paychex"] },
+  { key: "payrollTaxes", patterns: ["payroll tax", "fica", "futa", "suta", "unemployment tax", "medicare tax", "social security tax"] },
+  { key: "employeeBenefits", patterns: ["401k", "401(k)", "retirement", "simple ira", "health insurance", "group health", "medical insurance", "dental", "vision", "health benefit", "employee benefit"] },
   { key: "ramp", patterns: ["ramp"] },
-  { key: "contractorPayments", patterns: ["contractor", "subcontractor", "contract labor", "1099"] },
+  { key: "contractorPayments", patterns: ["contractor", "subcontractor", "contract labor", "1099", "consultant", "onshore", "offshore", "customer service team"] },
 ];
 
 function categorizeOutflow(vendorName: string, accountName: string): keyof Omit<CashForecastMonth, "month" | "cashReceipts"> {
@@ -568,7 +568,7 @@ export async function fetchCashForecastData(
   const monthMap = new Map<string, CashForecastMonth>();
   function getMonth(m: string): CashForecastMonth {
     if (!monthMap.has(m)) {
-      monthMap.set(m, { month: m, vendorPayments: 0, payroll: 0, fourOneK: 0, groupHealth: 0, ramp: 0, contractorPayments: 0, cashReceipts: 0 });
+      monthMap.set(m, { month: m, vendorPayments: 0, payroll: 0, payrollTaxes: 0, employeeBenefits: 0, ramp: 0, contractorPayments: 0, cashReceipts: 0 });
     }
     return monthMap.get(m)!;
   }

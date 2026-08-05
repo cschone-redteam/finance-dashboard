@@ -7,8 +7,8 @@ type CashForecastMonth = {
   month: string;
   vendorPayments: number;
   payroll: number;
-  fourOneK: number;
-  groupHealth: number;
+  payrollTaxes: number;
+  employeeBenefits: number;
   ramp: number;
   contractorPayments: number;
   cashReceipts: number;
@@ -22,8 +22,8 @@ const AR_COMPANIES = [
 const OUTFLOW_ROWS = [
   { key: "vendorPayments" as const, label: "Vendor Payments" },
   { key: "payroll" as const, label: "Payroll" },
-  { key: "fourOneK" as const, label: "401k" },
-  { key: "groupHealth" as const, label: "Group Health" },
+  { key: "payrollTaxes" as const, label: "Payroll Taxes" },
+  { key: "employeeBenefits" as const, label: "Employee Benefits" },
   { key: "ramp" as const, label: "Ramp" },
   { key: "contractorPayments" as const, label: "Contractor Payments" },
 ];
@@ -186,7 +186,38 @@ function CompanyForecastPanel({
                 </tr>
               </thead>
               <tbody>
-                {/* Outflow section header */}
+                {/* Cash Inflows section */}
+                <tr>
+                  <td
+                    colSpan={months.length + 2}
+                    className="py-2 px-4 text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider bg-gray-50 dark:bg-white/[0.02]"
+                  >
+                    Cash Inflows
+                  </td>
+                </tr>
+
+                <tr className="border-b-2 border-gray-200 dark:border-white/[0.08] hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                  <td className="py-2 px-4 text-xs font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap sticky left-0 bg-white dark:bg-[#0a0a0a]">
+                    Cash Receipts
+                  </td>
+                  {months.map((m) => (
+                    <td
+                      key={m.month}
+                      className={`py-2 px-4 text-xs text-right tabular-nums ${
+                        m.cashReceipts > 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-gray-300 dark:text-gray-700"
+                      }`}
+                    >
+                      {m.cashReceipts > 0 ? fmt(m.cashReceipts) : "–"}
+                    </td>
+                  ))}
+                  <td className={`py-2 px-4 text-xs text-right tabular-nums font-semibold text-emerald-600 dark:text-emerald-400`}>
+                    {fmt(months.reduce((sum, m) => sum + m.cashReceipts, 0))}
+                  </td>
+                </tr>
+
+                {/* Cash Outflows section */}
                 <tr>
                   <td
                     colSpan={months.length + 2}
@@ -234,37 +265,6 @@ function CompanyForecastPanel({
                   ))}
                   <td className="py-2 px-4 text-xs text-right tabular-nums font-bold text-red-600 dark:text-red-400">
                     {fmt(totalOutflows.reduce((a, b) => a + b, 0))}
-                  </td>
-                </tr>
-
-                {/* Cash Receipts section */}
-                <tr>
-                  <td
-                    colSpan={months.length + 2}
-                    className="py-2 px-4 text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider bg-gray-50 dark:bg-white/[0.02]"
-                  >
-                    Cash Inflows
-                  </td>
-                </tr>
-
-                <tr className="border-b border-gray-100 dark:border-white/[0.04] hover:bg-gray-50 dark:hover:bg-white/[0.02]">
-                  <td className="py-2 px-4 text-xs font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap sticky left-0 bg-white dark:bg-[#0a0a0a]">
-                    Cash Receipts
-                  </td>
-                  {months.map((m) => (
-                    <td
-                      key={m.month}
-                      className={`py-2 px-4 text-xs text-right tabular-nums ${
-                        m.cashReceipts > 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-gray-300 dark:text-gray-700"
-                      }`}
-                    >
-                      {m.cashReceipts > 0 ? fmt(m.cashReceipts) : "–"}
-                    </td>
-                  ))}
-                  <td className={`py-2 px-4 text-xs text-right tabular-nums font-semibold text-emerald-600 dark:text-emerald-400`}>
-                    {fmt(months.reduce((sum, m) => sum + m.cashReceipts, 0))}
                   </td>
                 </tr>
 
