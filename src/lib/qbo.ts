@@ -489,6 +489,121 @@ export async function fetchMonthlyReceipts(realmId: string): Promise<number> {
   return payments.reduce((sum: number, p: { TotalAmt?: number }) => sum + (p.TotalAmt || 0), 0);
 }
 
+export type CashForecastMonth = {
+  month: string;
+  vendorPayments: number;
+  payroll: number;
+  fourOneK: number;
+  groupHealth: number;
+  ramp: number;
+  contractorPayments: number;
+  cashReceipts: number;
+};
+
+async function queryAllPages(
+  realmId: string,
+  accessToken: string,
+  baseQuery: string,
+  entityKey: string
+): Promise<Record<string, unknown>[]> {
+  const results: Record<string, unknown>[] = [];
+  let startPosition = 1;
+  const pageSize = 1000;
+
+  while (true) {
+    const query = encodeURIComponent(`${baseQuery} STARTPOSITION ${startPosition} MAXRESULTS ${pageSize}`);
+    const res = await fetch(
+      `${apiBase()}/v3/company/${realmId}/query?query=${query}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
+      }
+    );
+    if (!res.ok) break;
+    const data = await res.json();
+    const items = data.QueryResponse?.[entityKey] || [];
+    results.push(...items);
+    if (items.length < pageSize) break;
+    startPosition += pageSize;
+  }
+
+  return results;
+}
+
+const OUTFLOW_PATTERNS: { key: keyof Omit<CashForecastMonth, "month" | "cashReceipts" | "vendorPayments">; patterns: string[] }[] = [
+  { key: "payroll", patterns: ["payroll", "wages", "salary", "salaries", "officer compensation", "adp", "gusto", "paychex"] },
+  { key: "fourOneK", patterns: ["401k", "401(k)", "retirement", "simple ira"] },
+  { key: "groupHealth", patterns: ["health insurance", "group health", "medical insurance", "dental", "vision", "health benefit"] },
+  { key: "ramp", patterns: ["ramp"] },
+  { key: "contractorPayments", patterns: ["contractor", "subcontractor", "contract labor", "1099"] },
+];
+
+function categorizeOutflow(vendorName: string, accountName: string): keyof Omit<CashForecastMonth, "month" | "cashReceipts"> {
+  const searchStr = `${vendorName} ${accountName}`.toLowerCase();
+  for (const cat of OUTFLOW_PATTERNS) {
+    if (cat.patterns.some((p) => searchStr.includes(p))) return cat.key;
+  }
+  return "vendorPayments";
+}
+
+function txnMonth(txnDate: string): string {
+  return txnDate.slice(0, 7);
+}
+
+export async function fetchCashForecastData(
+  realmId: string,
+  startDate: string,
+  endDate: string
+): Promise<CashForecastMonth[]> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+
+  const [purchases, billPayments, payments] = await Promise.all([
+    queryAllPages(realmId, accessToken, `SELECT * FROM Purchase WHERE TxnDate >= '${startDate}' AND TxnDate <= '${endDate}'`, "Purchase"),
+    queryAllPages(realmId, accessToken, `SELECT * FROM BillPayment WHERE TxnDate >= '${startDate}' AND TxnDate <= '${endDate}'`, "BillPayment"),
+    queryAllPages(realmId, accessToken, `SELECT * FROM Payment WHERE TxnDate >= '${startDate}' AND TxnDate <= '${endDate}'`, "Payment"),
+  ]);
+
+  const monthMap = new Map<string, CashForecastMonth>();
+  function getMonth(m: string): CashForecastMonth {
+    if (!monthMap.has(m)) {
+      monthMap.set(m, { month: m, vendorPayments: 0, payroll: 0, fourOneK: 0, groupHealth: 0, ramp: 0, contractorPayments: 0, cashReceipts: 0 });
+    }
+    return monthMap.get(m)!;
+  }
+
+  for (const p of purchases) {
+    const date = p.TxnDate as string;
+    if (!date) continue;
+    const m = getMonth(txnMonth(date));
+    const vendor = (p.EntityRef as { name?: string })?.name || "";
+    const accountName = (p.AccountRef as { name?: string })?.name || "";
+    const amount = (p.TotalAmt as number) || 0;
+    const cat = categorizeOutflow(vendor, accountName);
+    m[cat] += amount;
+  }
+
+  for (const bp of billPayments) {
+    const date = bp.TxnDate as string;
+    if (!date) continue;
+    const m = getMonth(txnMonth(date));
+    const vendor = (bp.VendorRef as { name?: string })?.name || "";
+    const amount = (bp.TotalAmt as number) || 0;
+    const cat = categorizeOutflow(vendor, "");
+    m[cat] += amount;
+  }
+
+  for (const pay of payments) {
+    const date = pay.TxnDate as string;
+    if (!date) continue;
+    const m = getMonth(txnMonth(date));
+    m.cashReceipts += (pay.TotalAmt as number) || 0;
+  }
+
+  return [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
+}
+
 export async function getConnectedRealm(): Promise<string | null> {
   const { data } = await supabaseAdmin
     .from("qbo_tokens")
