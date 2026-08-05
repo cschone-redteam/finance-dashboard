@@ -8,6 +8,7 @@ create table if not exists ar_aging_cache (
   report_date text not null,
   rows jsonb not null default '[]',
   total_customers int default 0,
+  monthly_receipts numeric default 0,
   synced_at timestamptz default now()
 );
 

@@ -464,6 +464,30 @@ export async function fetchCustomerCount(realmId: string): Promise<number> {
   return data.QueryResponse?.totalCount ?? 0;
 }
 
+export async function fetchMonthlyReceipts(realmId: string): Promise<number> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const now = new Date();
+  const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const endDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  const query = encodeURIComponent(
+    `SELECT * FROM Payment WHERE TxnDate >= '${startDate}' AND TxnDate <= '${endDate}'`
+  );
+  const res = await fetch(
+    `${apiBase()}/v3/company/${realmId}/query?query=${query}&maxresults=1000`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+  if (!res.ok) return 0;
+  const data = await res.json();
+  const payments = data.QueryResponse?.Payment || [];
+  return payments.reduce((sum: number, p: { TotalAmt?: number }) => sum + (p.TotalAmt || 0), 0);
+}
+
 export async function getConnectedRealm(): Promise<string | null> {
   const { data } = await supabaseAdmin
     .from("qbo_tokens")

@@ -127,6 +127,7 @@ function CompanyArPanel({
   const [reportDate, setReportDate] = useState("");
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [monthlyReceipts, setMonthlyReceipts] = useState(0);
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("totalBalance");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -141,6 +142,7 @@ function CompanyArPanel({
         setRows(data.rows || []);
         setReportDate(data.reportDate || "");
         setSyncedAt(data.synced_at || null);
+        setMonthlyReceipts(data.monthlyReceipts || 0);
       } catch {
         setRows([]);
       } finally {
@@ -167,6 +169,7 @@ function CompanyArPanel({
       setRows(data.rows);
       setReportDate(data.reportDate);
       setSyncedAt(data.synced_at);
+      setMonthlyReceipts(data.monthlyReceipts || 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to sync AR data");
     } finally {
@@ -294,7 +297,7 @@ function CompanyArPanel({
           </p>
 
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="bg-white dark:bg-white/[0.04] border border-gray-200 dark:border-white/[0.06] rounded-xl p-4">
               <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wider">
                 Total AR
@@ -313,6 +316,19 @@ function CompanyArPanel({
               {totalAr > 0 && (
                 <p className="text-[10px] text-gray-500 mt-0.5">
                   {((totalPastDue / totalAr) * 100).toFixed(1)}% of total
+                </p>
+              )}
+            </div>
+            <div className="bg-white dark:bg-white/[0.04] border border-gray-200 dark:border-white/[0.06] rounded-xl p-4">
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wider">
+                Cash Receipts (MTD)
+              </p>
+              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">
+                {fmt(monthlyReceipts)}
+              </p>
+              {totalAr > 0 && monthlyReceipts > 0 && (
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  {((monthlyReceipts / (totalAr + monthlyReceipts)) * 100).toFixed(1)}% collected
                 </p>
               )}
             </div>

@@ -4,6 +4,7 @@ import {
   fetchAgedReceivables,
   parseAgedReceivablesReport,
   fetchCustomerCount,
+  fetchMonthlyReceipts,
   getConnectedRealm,
 } from "@/lib/qbo";
 
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
         realmLabel: target.realm_label,
         synced_at: target.synced_at,
         totalCustomers: target.total_customers ?? null,
+        monthlyReceipts: target.monthly_receipts ?? 0,
         cachedRealms,
       });
     }
@@ -60,9 +62,10 @@ export async function POST(request: NextRequest) {
   const reportDate = new Date().toISOString().slice(0, 10);
 
   try {
-    const [report, totalCustomers] = await Promise.all([
+    const [report, totalCustomers, monthlyReceipts] = await Promise.all([
       fetchAgedReceivables(realmId, reportDate),
       fetchCustomerCount(realmId),
+      fetchMonthlyReceipts(realmId),
     ]);
     const rows = parseAgedReceivablesReport(report);
 
@@ -75,6 +78,7 @@ export async function POST(request: NextRequest) {
           report_date: reportDate,
           rows,
           total_customers: totalCustomers,
+          monthly_receipts: monthlyReceipts,
           synced_at: new Date().toISOString(),
         },
         { onConflict: "realm_id" }
@@ -84,7 +88,7 @@ export async function POST(request: NextRequest) {
       console.error("AR cache upsert error:", upsertErr);
     }
 
-    return NextResponse.json({ rows, reportDate, totalCustomers, synced_at: new Date().toISOString() });
+    return NextResponse.json({ rows, reportDate, totalCustomers, monthlyReceipts, synced_at: new Date().toISOString() });
   } catch (err) {
     console.error("AR Aging sync error:", err);
     return NextResponse.json(
