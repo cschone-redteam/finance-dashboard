@@ -321,7 +321,7 @@ function CompanyArPanel({
             </div>
             <div className="bg-white dark:bg-white/[0.04] border border-gray-200 dark:border-white/[0.06] rounded-xl p-4">
               <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wider">
-                Cash Receipts (MTD)
+                Cash Receipts (Prev Mo)
               </p>
               <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">
                 {fmt(monthlyReceipts)}
