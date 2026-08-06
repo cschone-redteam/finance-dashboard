@@ -578,9 +578,19 @@ export async function fetchCashForecastData(
     if (!date) continue;
     const m = getMonth(txnMonth(date));
     const vendor = (p.EntityRef as { name?: string })?.name || "";
-    const accountName = (p.AccountRef as { name?: string })?.name || "";
     const amount = (p.TotalAmt as number) || 0;
-    const cat = categorizeOutflow(vendor, accountName);
+
+    const lineAccounts: string[] = [];
+    const lines = (p.Line as Array<{ AccountBasedExpenseLineDetail?: { AccountRef?: { name?: string } }; DetailType?: string }>) || [];
+    for (const line of lines) {
+      if (line.AccountBasedExpenseLineDetail?.AccountRef?.name) {
+        lineAccounts.push(line.AccountBasedExpenseLineDetail.AccountRef.name);
+      }
+    }
+    const topAccount = (p.AccountRef as { name?: string })?.name || "";
+    const allAccounts = [topAccount, ...lineAccounts].filter(Boolean).join(" ");
+
+    const cat = categorizeOutflow(vendor, allAccounts);
     m[cat] += amount;
   }
 
@@ -590,7 +600,17 @@ export async function fetchCashForecastData(
     const m = getMonth(txnMonth(date));
     const vendor = (bp.VendorRef as { name?: string })?.name || "";
     const amount = (bp.TotalAmt as number) || 0;
-    const cat = categorizeOutflow(vendor, "");
+
+    const lineAccounts: string[] = [];
+    const lines = (bp.Line as Array<{ AccountBasedExpenseLineDetail?: { AccountRef?: { name?: string } }; DetailType?: string }>) || [];
+    for (const line of lines) {
+      if (line.AccountBasedExpenseLineDetail?.AccountRef?.name) {
+        lineAccounts.push(line.AccountBasedExpenseLineDetail.AccountRef.name);
+      }
+    }
+    const allAccounts = lineAccounts.join(" ");
+
+    const cat = categorizeOutflow(vendor, allAccounts);
     m[cat] += amount;
   }
 
