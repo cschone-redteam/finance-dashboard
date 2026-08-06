@@ -471,21 +471,12 @@ export async function fetchMonthlyReceipts(realmId: string): Promise<number> {
   const startDate = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}-01`;
   const lastDay = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0).getDate();
   const endDate = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-  const query = encodeURIComponent(
-    `SELECT * FROM Payment WHERE TxnDate >= '${startDate}' AND TxnDate <= '${endDate}'`
+  const payments = await queryAllPages(
+    realmId,
+    accessToken,
+    `SELECT * FROM Payment WHERE TxnDate >= '${startDate}' AND TxnDate <= '${endDate}'`,
+    "Payment"
   );
-  const res = await fetch(
-    `${apiBase()}/v3/company/${realmId}/query?query=${query}&maxresults=1000`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json",
-      },
-    }
-  );
-  if (!res.ok) return 0;
-  const data = await res.json();
-  const payments = data.QueryResponse?.Payment || [];
   return payments.reduce((sum: number, p: { TotalAmt?: number }) => sum + (p.TotalAmt || 0), 0);
 }
 
