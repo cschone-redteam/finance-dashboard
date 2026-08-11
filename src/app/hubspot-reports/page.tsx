@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
+import * as XLSX from "xlsx";
 
 const REPORTS = [
   { key: "churn" as const, label: "Churn" },
@@ -303,30 +304,30 @@ export default function HubSpotReportsPage() {
     );
   };
 
-  const handleExportCsv = useCallback(() => {
-    const cols = REPORT_COLUMNS[activeReport];
-    const header = cols.map((c) => c.label).join(",");
-    const csvRows = filteredAndSorted.map((row) =>
-      cols
-        .map((c) => {
-          let val = String(row[c.key] ?? "");
-          if (c.key === "health_status") val = val.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
-          if (val.includes(",") || val.includes('"') || val.includes("\n")) {
-            val = `"${val.replace(/"/g, '""')}"`;
+  const handleExportXlsx = useCallback(() => {
+    const wb = XLSX.utils.book_new();
+    for (const report of REPORTS) {
+      const cols = REPORT_COLUMNS[report.key];
+      const rows = reportData[report.key].rows;
+      const sheetData = rows.map((row) => {
+        const obj: Record<string, string | number> = {};
+        for (const c of cols) {
+          let val = row[c.key] ?? "";
+          if (c.key === "health_status") val = String(val).replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+          if (c.format === "currency" || c.format === "number") {
+            const num = parseFloat(String(val));
+            obj[c.label] = isNaN(num) ? "" : num;
+          } else {
+            obj[c.label] = String(val);
           }
-          return val;
-        })
-        .join(","),
-    );
-    const csv = [header, ...csvRows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `hubspot-${activeReport}-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [activeReport, filteredAndSorted]);
+        }
+        return obj;
+      });
+      const ws = XLSX.utils.json_to_sheet(sheetData);
+      XLSX.utils.book_append_sheet(wb, ws, report.label);
+    }
+    XLSX.writeFile(wb, `hubspot-reports-${new Date().toISOString().split("T")[0]}.xlsx`);
+  }, [reportData]);
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
@@ -383,14 +384,14 @@ export default function HubSpotReportsPage() {
             {syncing ? "Syncing..." : "Sync All"}
           </button>
           <button
-            onClick={handleExportCsv}
-            disabled={currentData.rows.length === 0}
+            onClick={handleExportXlsx}
+            disabled={Object.values(reportData).every((d) => d.rows.length === 0)}
             className="px-3 py-2 text-sm font-medium rounded-lg bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
             </svg>
-            CSV Export
+            Export XLSX
           </button>
         </div>
 
