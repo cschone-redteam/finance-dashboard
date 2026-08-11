@@ -212,6 +212,8 @@ export default function HubSpotReportsPage() {
   });
   const [sort, setSort] = useState<SortConfig>(null);
   const [search, setSearch] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const fetchReport = useCallback(async (type: ReportKey) => {
     setReportData((prev) => ({ ...prev, [type]: { ...prev[type], loading: true } }));
@@ -234,6 +236,32 @@ export default function HubSpotReportsPage() {
   useEffect(() => {
     fetchReport(activeReport);
   }, [activeReport, fetchReport]);
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      const res = await fetch("/api/hubspot-reports/sync", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok && data.error) {
+        setSyncError(data.error);
+        return;
+      }
+      const errors = Object.entries(data.results || {})
+        .filter(([, v]) => v && typeof v === "object" && "error" in v)
+        .map(([k, v]) => `${k}: ${(v as { error: string }).error}`);
+      if (errors.length > 0) {
+        setSyncError(errors.join("; "));
+      }
+      for (const key of REPORTS.map((r) => r.key)) {
+        fetchReport(key);
+      }
+    } catch {
+      setSyncError("Failed to connect to sync endpoint");
+    } finally {
+      setSyncing(false);
+    }
+  }, [fetchReport]);
 
   const columns = REPORT_COLUMNS[activeReport];
   const currentData = reportData[activeReport];
@@ -287,6 +315,12 @@ export default function HubSpotReportsPage() {
           </p>
         </div>
 
+        {syncError && (
+          <div className="mb-4 px-4 py-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 text-sm text-red-700 dark:text-red-400">
+            {syncError}
+          </div>
+        )}
+
         <div className="flex items-center gap-2 mb-6">
           {REPORTS.map((report) => (
             <button
@@ -305,6 +339,28 @@ export default function HubSpotReportsPage() {
               {report.label}
             </button>
           ))}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="ml-auto px-4 py-2 text-sm font-medium rounded-lg bg-[#EF373E] text-white hover:bg-[#d42f35] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm flex items-center gap-2"
+          >
+            {syncing ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Syncing...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                </svg>
+                Sync All
+              </>
+            )}
+          </button>
         </div>
 
         {currentData.loading ? (
