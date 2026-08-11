@@ -304,30 +304,45 @@ export default function HubSpotReportsPage() {
     );
   };
 
-  const handleExportXlsx = useCallback(() => {
-    const wb = XLSX.utils.book_new();
-    for (const report of REPORTS) {
-      const cols = REPORT_COLUMNS[report.key];
-      const rows = reportData[report.key].rows;
-      const sheetData = rows.map((row) => {
-        const obj: Record<string, string | number> = {};
-        for (const c of cols) {
-          let val = row[c.key] ?? "";
-          if (c.key === "health_status") val = String(val).replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
-          if (c.format === "currency" || c.format === "number") {
-            const num = parseFloat(String(val));
-            obj[c.label] = isNaN(num) ? "" : num;
-          } else {
-            obj[c.label] = String(val);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportXlsx = useCallback(async () => {
+    setExporting(true);
+    try {
+      const allData: Record<string, ReportRow[]> = {};
+      await Promise.all(
+        REPORTS.map(async (report) => {
+          const res = await fetch(`/api/hubspot-reports?type=${report.key}`);
+          const data = await res.json();
+          allData[report.key] = data.rows || [];
+        }),
+      );
+      const wb = XLSX.utils.book_new();
+      for (const report of REPORTS) {
+        const cols = REPORT_COLUMNS[report.key];
+        const rows = allData[report.key];
+        const sheetData = rows.map((row) => {
+          const obj: Record<string, string | number> = {};
+          for (const c of cols) {
+            let val = row[c.key] ?? "";
+            if (c.key === "health_status") val = String(val).replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+            if (c.format === "currency" || c.format === "number") {
+              const num = parseFloat(String(val));
+              obj[c.label] = isNaN(num) ? "" : num;
+            } else {
+              obj[c.label] = String(val);
+            }
           }
-        }
-        return obj;
-      });
-      const ws = XLSX.utils.json_to_sheet(sheetData);
-      XLSX.utils.book_append_sheet(wb, ws, report.label);
+          return obj;
+        });
+        const ws = XLSX.utils.json_to_sheet(sheetData);
+        XLSX.utils.book_append_sheet(wb, ws, report.label);
+      }
+      XLSX.writeFile(wb, `hubspot-reports-${new Date().toISOString().split("T")[0]}.xlsx`);
+    } finally {
+      setExporting(false);
     }
-    XLSX.writeFile(wb, `hubspot-reports-${new Date().toISOString().split("T")[0]}.xlsx`);
-  }, [reportData]);
+  }, []);
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
@@ -385,13 +400,13 @@ export default function HubSpotReportsPage() {
           </button>
           <button
             onClick={handleExportXlsx}
-            disabled={Object.values(reportData).every((d) => d.rows.length === 0)}
+            disabled={exporting}
             className="px-3 py-2 text-sm font-medium rounded-lg bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
             </svg>
-            Export XLSX
+            {exporting ? "Exporting..." : "Export XLSX"}
           </button>
         </div>
 
