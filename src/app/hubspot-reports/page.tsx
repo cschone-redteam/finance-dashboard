@@ -201,6 +201,146 @@ function ReportSummary({ reportKey, rows }: { reportKey: ReportKey; rows: Report
   );
 }
 
+const MONTHS_2026 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function getMonth2026(dateStr: unknown): number | null {
+  if (!dateStr) return null;
+  const d = new Date(String(dateStr));
+  if (isNaN(d.getTime()) || d.getFullYear() !== 2026) return null;
+  return d.getMonth();
+}
+
+const REPORT_CHART_CONFIG: Record<ReportKey, { field: string; color: string; label: string }> = {
+  churn: { field: "expiring_arr", color: "#EF373E", label: "Churned ARR" },
+  renewals: { field: "arr", color: "#10b981", label: "Renewed ARR" },
+  bookings: { field: "amount", color: "#3b82f6", label: "Bookings Amount" },
+  "arr-stack": { field: "subscription_arr", color: "#8b5cf6", label: "Subscription ARR" },
+};
+
+function fmt$(n: number) {
+  return n === 0
+    ? "—"
+    : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+}
+
+function fmtK(n: number) {
+  return n === 0
+    ? "—"
+    : n >= 1_000_000
+      ? `$${(n / 1_000_000).toFixed(1)}M`
+      : `$${(n / 1_000).toFixed(0)}K`;
+}
+
+function ReportMonthlyChart({ reportKey, rows }: { reportKey: ReportKey; rows: ReportRow[] }) {
+  const config = REPORT_CHART_CONFIG[reportKey];
+
+  const monthly = useMemo(() => {
+    if (reportKey === "arr-stack") return null;
+
+    const vals = new Array(12).fill(0);
+    const counts = new Array(12).fill(0);
+    for (const row of rows) {
+      const m = getMonth2026(row.closedate);
+      if (m !== null) {
+        vals[m] += parseFloat(String(row[config.field] || "0")) || 0;
+        counts[m]++;
+      }
+    }
+
+    let lastMonth = 0;
+    for (let i = 11; i >= 0; i--) {
+      if (vals[i] > 0) { lastMonth = i; break; }
+    }
+    const visibleMonths = Math.max(lastMonth + 1, 1);
+    const total = vals.reduce((a, b) => a + b, 0);
+
+    return { vals, counts, visibleMonths, total };
+  }, [reportKey, rows, config.field]);
+
+  const arrBySegment = useMemo(() => {
+    if (reportKey !== "arr-stack") return null;
+    const segments: Record<string, { total: number; count: number }> = {};
+    for (const row of rows) {
+      const seg = String(row.arr_segment || "Unknown");
+      if (!segments[seg]) segments[seg] = { total: 0, count: 0 };
+      segments[seg].total += parseFloat(String(row.subscription_arr || "0")) || 0;
+      segments[seg].count++;
+    }
+    const entries = Object.entries(segments).sort((a, b) => b[1].total - a[1].total);
+    const grandTotal = entries.reduce((s, [, v]) => s + v.total, 0);
+    return { entries, grandTotal };
+  }, [reportKey, rows]);
+
+  if (reportKey === "arr-stack" && arrBySegment) {
+    const maxVal = Math.max(...arrBySegment.entries.map(([, v]) => v.total), 1);
+    return (
+      <div className="mb-6 bg-white dark:bg-white/[0.02] border border-gray-200 dark:border-white/[0.06] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">ARR by Segment</h3>
+          <div className="flex items-center gap-1 px-3 py-1.5 bg-gray-50 dark:bg-white/[0.03] rounded-lg border border-gray-100 dark:border-white/[0.04]">
+            <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mr-1">Total</span>
+            <span className="text-sm font-bold text-gray-900 dark:text-white font-mono">{fmt$(arrBySegment.grandTotal)}</span>
+          </div>
+        </div>
+        <div className="space-y-2">
+          {arrBySegment.entries.map(([seg, { total, count }]) => (
+            <div key={seg} className="flex items-center gap-3">
+              <div className="w-28 text-xs text-gray-600 dark:text-gray-400 truncate" title={seg}>{seg}</div>
+              <div className="flex-1 h-5 bg-gray-100 dark:bg-white/[0.04] rounded overflow-hidden">
+                <div
+                  className="h-full rounded transition-all"
+                  style={{ width: `${(total / maxVal) * 100}%`, backgroundColor: config.color }}
+                />
+              </div>
+              <div className="w-16 text-right text-xs font-mono text-gray-700 dark:text-gray-300">{fmtK(total)}</div>
+              <div className="w-10 text-right text-[10px] text-gray-400">{count}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!monthly) return null;
+
+  const maxVal = Math.max(...monthly.vals.slice(0, monthly.visibleMonths), 1);
+
+  return (
+    <div className="mb-6 bg-white dark:bg-white/[0.02] border border-gray-200 dark:border-white/[0.06] rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">2026 {config.label} by Month</h3>
+        <div className="flex items-center gap-1 px-3 py-1.5 bg-gray-50 dark:bg-white/[0.03] rounded-lg border border-gray-100 dark:border-white/[0.04]">
+          <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mr-1">Total</span>
+          <span className="text-sm font-bold text-gray-900 dark:text-white font-mono">{fmt$(monthly.total)}</span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${monthly.visibleMonths}, minmax(60px, 1fr))` }}>
+          {MONTHS_2026.slice(0, monthly.visibleMonths).map((m, i) => (
+            <div key={m} className="text-center">
+              <div className="text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase mb-1">{m}</div>
+              <div className="flex items-end justify-center h-16">
+                <div
+                  className="w-6 rounded-t-sm transition-all"
+                  style={{
+                    height: `${Math.max((monthly.vals[i] / maxVal) * 100, monthly.vals[i] > 0 ? 4 : 0)}%`,
+                    backgroundColor: config.color,
+                  }}
+                  title={`${config.label}: ${fmt$(monthly.vals[i])}`}
+                />
+              </div>
+              <div className="mt-1">
+                <div className="text-[10px] font-mono" style={{ color: config.color }}>{monthly.vals[i] > 0 ? fmtK(monthly.vals[i]) : "—"}</div>
+                <div className="text-[9px] text-gray-400">{monthly.counts[i] > 0 ? `${monthly.counts[i]} deals` : ""}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HubSpotReportsPage() {
   const [activeReport, setActiveReport] = useState<ReportKey>("churn");
   const [reportData, setReportData] = useState<
@@ -235,8 +375,8 @@ export default function HubSpotReportsPage() {
   }, []);
 
   useEffect(() => {
-    fetchReport(activeReport);
-  }, [activeReport, fetchReport]);
+    for (const r of REPORTS) fetchReport(r.key);
+  }, [fetchReport]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
@@ -409,6 +549,8 @@ export default function HubSpotReportsPage() {
             {exporting ? "Exporting..." : "Export XLSX"}
           </button>
         </div>
+
+        <ReportMonthlyChart reportKey={activeReport} rows={currentData.rows} />
 
         {currentData.loading ? (
           <div className="text-center py-16 text-gray-400">Loading...</div>

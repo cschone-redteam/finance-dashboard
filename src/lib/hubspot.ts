@@ -125,8 +125,7 @@ async function getCompanyNames(dealIds: string[]): Promise<Map<string, string>> 
 
 function getCutoffDate(): string {
   const now = new Date();
-  const cutoff = new Date(now.getFullYear(), now.getMonth() - 6, 1);
-  return cutoff.toISOString().split("T")[0];
+  return `${now.getFullYear()}-01-01`;
 }
 
 type Row = Record<string, string | null>;
