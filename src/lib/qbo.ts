@@ -643,7 +643,7 @@ type QboRow = {
   Rows?: { Row: QboRow[] };
   Header?: { ColData: QboCellValue[] };
 };
-type QboReportResponse = {
+export type QboReportResponse = {
   Header: { ReportName: string; StartPeriod: string; EndPeriod: string };
   Columns: { Column: QboColDesc[] };
   Rows: { Row: QboRow[] };
@@ -656,6 +656,98 @@ export type ParsedTBRow = {
   credit: number;
   net_amount: number;
 };
+
+export async function fetchProfitAndLossMonthly(
+  realmId: string,
+  startDate: string,
+  endDate: string,
+  classId?: string
+): Promise<QboReportResponse> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+    summarize_column_by: "Month",
+  });
+  if (classId) params.set("class", classId);
+
+  const res = await fetch(
+    `${apiBase()}/v3/company/${realmId}/reports/ProfitAndLoss?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`QBO API error: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+export type MonthlyPnLEntry = {
+  section: string;
+  accountName: string;
+  monthly: Record<string, number>;
+};
+
+const MONTH_ABBR: Record<string, string> = {
+  Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+  Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+};
+
+function parseMonthTitle(title: string): string | null {
+  const parts = title.split(" ");
+  if (parts.length === 2 && MONTH_ABBR[parts[0]]) {
+    return `${parts[1]}-${MONTH_ABBR[parts[0]]}`;
+  }
+  return null;
+}
+
+export function parseMonthlyPnLReport(
+  report: QboReportResponse
+): MonthlyPnLEntry[] {
+  const columns = report.Columns?.Column || [];
+  const monthKeys: string[] = [];
+  for (let i = 1; i < columns.length; i++) {
+    const title = columns[i].ColTitle;
+    if (title === "TOTAL") continue;
+    const parsed = parseMonthTitle(title);
+    if (parsed) monthKeys.push(parsed);
+  }
+
+  const entries: MonthlyPnLEntry[] = [];
+
+  function walkSection(rows: QboRow[], sectionName: string) {
+    for (const row of rows) {
+      if (row.Header?.ColData) {
+        const name = row.Header.ColData[0]?.value || sectionName;
+        if (row.Rows?.Row) walkSection(row.Rows.Row, name);
+      } else if (row.ColData && row.ColData.length >= 2 && row.type !== "Section") {
+        const accountName = row.ColData[0]?.value || "";
+        if (!accountName || accountName.startsWith("Total ")) continue;
+
+        const monthly: Record<string, number> = {};
+        for (let i = 0; i < monthKeys.length; i++) {
+          monthly[monthKeys[i]] = parseFloat(row.ColData[i + 1]?.value || "0") || 0;
+        }
+        entries.push({ section: sectionName, accountName, monthly });
+      }
+    }
+  }
+
+  for (const row of report.Rows?.Row || []) {
+    if (row.Header?.ColData && row.Rows?.Row) {
+      walkSection(row.Rows.Row, row.Header.ColData[0]?.value || "Unknown");
+    }
+  }
+
+  return entries;
+}
 
 export function parseTrialBalanceReport(
   report: QboReportResponse
