@@ -71,6 +71,78 @@ const REPORT_COLUMNS: Record<ReportKey, ColumnDef[]> = {
   ],
 };
 
+const EXPORT_COLUMNS: Record<ReportKey, ColumnDef[]> = {
+  churn: [
+    { key: "dealname", label: "Deal Name" },
+    { key: "company", label: "Company" },
+    { key: "owner", label: "Owner" },
+    { key: "product_owned", label: "Product" },
+    { key: "closedate", label: "Close Date", format: "date" },
+    { key: "renewal_date", label: "Renewal Date", format: "date" },
+    { key: "expiring_arr", label: "Renewable ARR", format: "currency" },
+    { key: "churn_reason", label: "Churn Reason" },
+    { key: "secondary_churn_reason", label: "Secondary Reason" },
+    { key: "churn_detail", label: "Churn Detail" },
+    { key: "market_segment", label: "Market Segment" },
+    { key: "billing_frequency", label: "Billing Frequency" },
+    { key: "term_years", label: "Term (Years)" },
+    { key: "product_gaps", label: "Product Gaps" },
+  ],
+  renewals: [
+    { key: "dealname", label: "Deal Name" },
+    { key: "company", label: "Company" },
+    { key: "owner", label: "Owner" },
+    { key: "product_owned", label: "Product" },
+    { key: "closedate", label: "Close Date", format: "date" },
+    { key: "renewal_date", label: "Renewal Date", format: "date" },
+    { key: "expiring_arr", label: "Expiring ARR", format: "currency" },
+    { key: "arr", label: "New ARR", format: "currency" },
+    { key: "forecast_category", label: "Forecast" },
+    { key: "forecast_amount", label: "Forecast Amount", format: "currency" },
+    { key: "billing_frequency", label: "Billing Frequency" },
+    { key: "term_years", label: "Term (Years)" },
+    { key: "sub_start_date", label: "Sub Start Date", format: "date" },
+    { key: "sub_renewal_date", label: "Sub Renewal Date", format: "date" },
+  ],
+  bookings: [
+    { key: "dealname", label: "Deal Name" },
+    { key: "company", label: "Company" },
+    { key: "owner", label: "Owner" },
+    { key: "closedate", label: "Close Date", format: "date" },
+    { key: "amount", label: "Amount", format: "currency" },
+    { key: "arr", label: "ARR", format: "currency" },
+    { key: "tcv", label: "TCV", format: "currency" },
+    { key: "booked_apv", label: "Booked APV", format: "currency" },
+    { key: "deal_type", label: "Type" },
+    { key: "product_owned", label: "Product" },
+    { key: "billing_frequency", label: "Billing Frequency" },
+    { key: "term_years", label: "Term (Years)" },
+    { key: "sub_start_date", label: "Sub Start Date", format: "date" },
+    { key: "sub_renewal_date", label: "Sub Renewal Date", format: "date" },
+  ],
+  "arr-stack": [
+    { key: "name", label: "Company" },
+    { key: "subscription_arr", label: "Sub ARR", format: "currency" },
+    { key: "company_apv", label: "Company APV", format: "currency" },
+    { key: "booked_apv", label: "Booked APV", format: "currency" },
+    { key: "pricing_plan", label: "Pricing Plan" },
+    { key: "payment_frequency", label: "Payment Frequency" },
+    { key: "arr_segment", label: "ARR Segment" },
+    { key: "client_segment", label: "Client Segment" },
+    { key: "health_phase", label: "Health Phase" },
+    { key: "health_status", label: "Health Status" },
+    { key: "csm_owner", label: "CSM Owner" },
+    { key: "client_start_date", label: "Client Start Date", format: "date" },
+    { key: "city", label: "City" },
+    { key: "state", label: "State" },
+    { key: "revenue_band", label: "Revenue Band" },
+    { key: "flex_subscription", label: "Flex Sub", format: "currency" },
+    { key: "go_subscription", label: "Go Sub", format: "currency" },
+    { key: "fieldlens_subscription", label: "Fieldlens Sub", format: "currency" },
+    { key: "teamplayer_subscription", label: "TeamPlayer Sub", format: "currency" },
+  ],
+};
+
 function formatCellValue(value: unknown, format?: string): string {
   if (value === null || value === undefined || value === "") return "—";
 
@@ -484,6 +556,31 @@ export default function HubSpotReportsPage() {
     }
   }, []);
 
+  const handleExportReport = useCallback((reportKey: ReportKey, rows: ReportRow[]) => {
+    const report = REPORTS.find((r) => r.key === reportKey);
+    if (!report) return;
+    const cols = EXPORT_COLUMNS[reportKey];
+    const sheetData = rows.map((row) => {
+      const obj: Record<string, string | number> = {};
+      for (const c of cols) {
+        let val = row[c.key] ?? "";
+        if (c.key === "health_status" || c.key === "health_phase")
+          val = String(val).replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+        if (c.format === "currency" || c.format === "number") {
+          const num = parseFloat(String(val));
+          obj[c.label] = isNaN(num) ? "" : num;
+        } else {
+          obj[c.label] = String(val);
+        }
+      }
+      return obj;
+    });
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(sheetData);
+    XLSX.utils.book_append_sheet(wb, ws, report.label);
+    XLSX.writeFile(wb, `${reportKey}-${new Date().toISOString().split("T")[0]}.xlsx`);
+  }, []);
+
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
       <div className="mx-auto">
@@ -539,6 +636,16 @@ export default function HubSpotReportsPage() {
             {syncing ? "Syncing..." : "Sync All"}
           </button>
           <button
+            onClick={() => handleExportReport(activeReport, currentData.rows)}
+            disabled={currentData.rows.length === 0}
+            className="px-3 py-2 text-sm font-medium rounded-lg bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Export {REPORTS.find((r) => r.key === activeReport)?.label}
+          </button>
+          <button
             onClick={handleExportXlsx}
             disabled={exporting}
             className="px-3 py-2 text-sm font-medium rounded-lg bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
@@ -546,7 +653,7 @@ export default function HubSpotReportsPage() {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
             </svg>
-            {exporting ? "Exporting..." : "Export XLSX"}
+            {exporting ? "Exporting..." : "Export All"}
           </button>
         </div>
 
