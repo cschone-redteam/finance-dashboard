@@ -65,7 +65,7 @@ async function listAllInvoices(
   let offset: string | undefined;
 
   do {
-    const query = { ...params, limit: "100" };
+    const query: Record<string, string> = { ...params, limit: "100" };
     if (offset) query.offset = offset;
 
     const data = await chargebeeFetch<ChargebeeInvoice>("/invoices", query);
