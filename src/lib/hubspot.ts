@@ -291,3 +291,25 @@ export async function syncArrStack(): Promise<Row[]> {
     booked_apv: c.properties.booked_apv,
   }));
 }
+
+export async function getCompanyOwners(): Promise<Map<string, string>> {
+  const ownerMap = await getOwnerMap();
+  const companies = await searchAll("companies", [
+    {
+      filters: [
+        { propertyName: "paying_client", operator: "EQ", value: "Yes" },
+      ],
+    },
+  ], ["name", "hubspot_owner_id"]);
+
+  const result = new Map<string, string>();
+  for (const c of companies) {
+    const name = c.properties.name;
+    const ownerId = c.properties.hubspot_owner_id;
+    if (name && ownerId) {
+      const ownerName = ownerMap.get(ownerId);
+      if (ownerName) result.set(name, ownerName);
+    }
+  }
+  return result;
+}

@@ -178,7 +178,7 @@ function CompanyArPanel({
   }
 
   const customers = buildCustomerSummaries(
-    rows.filter((r) => !isIntercompany(r.customer))
+    rows.filter((r) => !isIntercompany(r.customer) && r.transaction_type === "Invoice")
   );
 
   const bucketTotals = BUCKETS.map((_, i) =>

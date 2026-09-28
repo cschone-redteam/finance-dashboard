@@ -447,6 +447,36 @@ export function parseAgedReceivablesReport(
   return rows;
 }
 
+export type OutstandingInvoice = {
+  customer: string;
+  invoiceNumber: string;
+  txnDate: string;
+  dueDate: string;
+  balance: number;
+  totalAmt: number;
+};
+
+export async function fetchOutstandingInvoices(
+  realmId: string
+): Promise<OutstandingInvoice[]> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const invoices = await queryAllPages(
+    realmId,
+    accessToken,
+    "SELECT * FROM Invoice WHERE Balance > '0' ORDERBY DueDate DESC",
+    "Invoice"
+  );
+
+  return invoices.map((inv) => ({
+    customer: (inv.CustomerRef as { name?: string })?.name || "Unknown",
+    invoiceNumber: (inv.DocNumber as string) || "",
+    txnDate: (inv.TxnDate as string) || "",
+    dueDate: (inv.DueDate as string) || "",
+    balance: (inv.Balance as number) || 0,
+    totalAmt: (inv.TotalAmt as number) || 0,
+  }));
+}
+
 export async function fetchCustomerCount(realmId: string): Promise<number> {
   const accessToken = await refreshTokenIfNeeded(realmId);
   const query = encodeURIComponent("SELECT COUNT(*) FROM Customer WHERE Active = true");
