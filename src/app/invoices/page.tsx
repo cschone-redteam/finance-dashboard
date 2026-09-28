@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import * as XLSX from "xlsx";
 
 type Invoice = {
   customer: string;
@@ -167,6 +168,27 @@ export default function InvoicesPage() {
     }
     return result;
   }, [customers, search, ownerFilter, statusFilter, minOutstanding, maxOutstanding]);
+
+  const handleExport = useCallback(() => {
+    const entityLabel = entity === "flex" ? "Flex" : entity === "go" ? "Go" : "Chargebee";
+    const rows = filtered.flatMap((c) =>
+      c.invoices.map((inv) => ({
+        Customer: c.customer,
+        Owner: c.owner || "",
+        Status: c.status === "Active" ? "Active" : "Churn",
+        "Invoice #": inv.invoiceNumber,
+        Date: inv.txnDate,
+        "Due Date": inv.dueDate,
+        Total: inv.totalAmt,
+        Balance: inv.balance,
+      }))
+    );
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, "Invoices");
+    const ownerSuffix = ownerFilter ? `-${ownerFilter.replace(/\s+/g, "-")}` : "";
+    XLSX.writeFile(wb, `invoices-${entityLabel}${ownerSuffix}-${new Date().toISOString().split("T")[0]}.xlsx`);
+  }, [filtered, entity, ownerFilter]);
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
@@ -350,6 +372,16 @@ export default function InvoicesPage() {
               Clear filters
             </button>
           )}
+          <button
+            onClick={handleExport}
+            disabled={loading || filtered.length === 0}
+            className="ml-auto px-3 py-2 text-sm font-medium rounded-lg bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Export XLSX
+          </button>
         </div>
 
         {/* Customer list */}
