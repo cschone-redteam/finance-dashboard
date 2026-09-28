@@ -37,6 +37,7 @@ function isIntercompany(customer: string): boolean {
 type CustomerIntervention = {
   customer: string;
   entity: string;
+  status: "Active" | "Churned";
   totalBalance: number;
   invoiceCount: number;
   oldestDays: number;
@@ -44,7 +45,7 @@ type CustomerIntervention = {
   invoices: ArRow[];
 };
 
-type SortField = "customer" | "entity" | "totalBalance" | "oldestDays" | "invoiceCount";
+type SortField = "customer" | "entity" | "status" | "totalBalance" | "oldestDays" | "invoiceCount";
 type SortDir = "asc" | "desc";
 
 function fmt(n: number): string {
@@ -86,11 +87,24 @@ function severityLabel(days: number): string {
   return "Low";
 }
 
+const NOISE_WORDS = new Set(["the", "a", "an", "and", "of", "inc", "llc", "corp", "co", "ltd", "group", "construction", "services", "service", "company", "builders", "building", "steel", "peak", "eagle", "general", "national", "american", "united", "commercial", "city", "works"]);
+
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function firstDistinctWord(s: string): string {
+  const words = normalize(s).split(" ");
+  return words.find((w) => w.length > 2 && !NOISE_WORDS.has(w)) || "";
+}
+
 export default function CsmInterventionPage() {
   const [loading, setLoading] = useState(true);
   const [allRows, setAllRows] = useState<{ entity: string; rows: ArRow[] }[]>([]);
+  const [churnNames, setChurnNames] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [entityFilter, setEntityFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"" | "Active" | "Churned">("");
   const [sortField, setSortField] = useState<SortField>("oldestDays");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
@@ -99,17 +113,24 @@ export default function CsmInterventionPage() {
     async function load() {
       setLoading(true);
       const results: { entity: string; rows: ArRow[] }[] = [];
-      await Promise.all(
-        AR_COMPANIES.map(async (co) => {
-          try {
-            const res = await fetch(`/api/ar?realmId=${co.id}`);
-            const data = await res.json();
-            results.push({ entity: co.label, rows: data.rows || [] });
-          } catch {
-            results.push({ entity: co.label, rows: [] });
-          }
-        }),
-      );
+      const [, churnRes] = await Promise.all([
+        Promise.all(
+          AR_COMPANIES.map(async (co) => {
+            try {
+              const res = await fetch(`/api/ar?realmId=${co.id}`);
+              const data = await res.json();
+              results.push({ entity: co.label, rows: data.rows || [] });
+            } catch {
+              results.push({ entity: co.label, rows: [] });
+            }
+          }),
+        ),
+        fetch("/api/hubspot-reports?type=churn").then((r) => r.json()).catch(() => ({ rows: [] })),
+      ]);
+      const names = ((churnRes.rows || []) as { company?: string; dealname?: string }[])
+        .map((d) => d.company || d.dealname || "")
+        .filter(Boolean);
+      setChurnNames(names);
       setAllRows(results);
       setLoading(false);
     }
@@ -117,6 +138,26 @@ export default function CsmInterventionPage() {
   }, []);
 
   const customers = useMemo(() => {
+    const churnNormalized = new Set(churnNames.map(normalize));
+    const churnFirstWords = new Map<string, number>();
+    for (const name of churnNames) {
+      const fw = firstDistinctWord(name);
+      if (fw) churnFirstWords.set(fw, (churnFirstWords.get(fw) || 0) + 1);
+    }
+
+    function isChurned(customer: string): boolean {
+      const norm = normalize(customer);
+      if (churnNormalized.has(norm)) return true;
+      for (const cn of churnNormalized) {
+        if (norm.includes(cn) || cn.includes(norm)) return true;
+      }
+      const fw = firstDistinctWord(customer);
+      if (fw && churnFirstWords.get(fw) === 1) {
+        return churnNames.some((n) => firstDistinctWord(n) === fw);
+      }
+      return false;
+    }
+
     const map = new Map<string, CustomerIntervention>();
 
     for (const { entity, rows } of allRows) {
@@ -131,6 +172,7 @@ export default function CsmInterventionPage() {
           entry = {
             customer: row.customer,
             entity,
+            status: isChurned(row.customer) ? "Churned" : "Active",
             totalBalance: 0,
             invoiceCount: 0,
             oldestDays: 0,
@@ -150,11 +192,12 @@ export default function CsmInterventionPage() {
     }
 
     return [...map.values()];
-  }, [allRows]);
+  }, [allRows, churnNames]);
 
   const filtered = useMemo(() => {
     let list = customers;
     if (entityFilter) list = list.filter((c) => c.entity === entityFilter);
+    if (statusFilter) list = list.filter((c) => c.status === statusFilter);
     if (search) {
       const q = search.toLowerCase();
       list = list.filter((c) => c.customer.toLowerCase().includes(q));
@@ -164,12 +207,13 @@ export default function CsmInterventionPage() {
       switch (sortField) {
         case "customer": return mul * a.customer.localeCompare(b.customer);
         case "entity": return mul * a.entity.localeCompare(b.entity);
+        case "status": return mul * a.status.localeCompare(b.status);
         case "totalBalance": return mul * (a.totalBalance - b.totalBalance);
         case "oldestDays": return mul * (a.oldestDays - b.oldestDays);
         case "invoiceCount": return mul * (a.invoiceCount - b.invoiceCount);
       }
     });
-  }, [customers, entityFilter, search, sortField, sortDir]);
+  }, [customers, entityFilter, statusFilter, search, sortField, sortDir]);
 
   const totalBalance = filtered.reduce((s, c) => s + c.totalBalance, 0);
   const criticalCount = filtered.filter((c) => c.oldestDays > 90).length;
@@ -178,6 +222,7 @@ export default function CsmInterventionPage() {
     const sheetData = filtered.map((c) => ({
       Customer: c.customer,
       Entity: c.entity,
+      Status: c.status === "Active" ? "Active" : "Churn",
       "Open Balance": c.totalBalance,
       Invoices: c.invoiceCount,
       "Oldest (Days)": c.oldestDays,
@@ -267,6 +312,38 @@ export default function CsmInterventionPage() {
                   </button>
                 ))}
               </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setStatusFilter("")}
+                  className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                    statusFilter === ""
+                      ? "bg-gray-900 dark:bg-white/[0.1] text-white"
+                      : "bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06]"
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setStatusFilter("Active")}
+                  className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                    statusFilter === "Active"
+                      ? "bg-green-600 text-white"
+                      : "bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06]"
+                  }`}
+                >
+                  Active
+                </button>
+                <button
+                  onClick={() => setStatusFilter("Churned")}
+                  className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                    statusFilter === "Churned"
+                      ? "bg-red-600 text-white"
+                      : "bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06]"
+                  }`}
+                >
+                  Churn
+                </button>
+              </div>
               <button
                 onClick={handleExport}
                 disabled={filtered.length === 0}
@@ -287,6 +364,7 @@ export default function CsmInterventionPage() {
                     {[
                       { key: "customer" as SortField, label: "Customer", align: "text-left" },
                       { key: "entity" as SortField, label: "Entity", align: "text-left" },
+                      { key: "status" as SortField, label: "Active", align: "text-center" },
                       { key: "totalBalance" as SortField, label: "Balance", align: "text-right" },
                       { key: "invoiceCount" as SortField, label: "Invoices", align: "text-right" },
                       { key: "oldestDays" as SortField, label: "Oldest", align: "text-right" },
@@ -315,7 +393,7 @@ export default function CsmInterventionPage() {
                     const isExpanded = expandedCustomer === key;
                     return (
                       <tr key={key} className="group">
-                        <td colSpan={6} className="p-0">
+                        <td colSpan={7} className="p-0">
                           <div
                             className="flex items-center cursor-pointer hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors"
                             onClick={() => setExpandedCustomer(isExpanded ? null : key)}
@@ -338,6 +416,15 @@ export default function CsmInterventionPage() {
                                   : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
                               }`}>
                                 {c.entity}
+                              </span>
+                            </div>
+                            <div className="px-3 py-2.5 w-24 text-center">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                c.status === "Active"
+                                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                              }`}>
+                                {c.status === "Active" ? "Active" : "Churn"}
                               </span>
                             </div>
                             <div className="px-3 py-2.5 w-28 text-right font-mono text-gray-700 dark:text-gray-300">
