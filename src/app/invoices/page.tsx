@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 type Invoice = {
   customer: string;
@@ -21,6 +21,14 @@ type CustomerGroup = {
 };
 
 type Entity = "flex" | "go" | "cb-flex";
+
+type CachedData = {
+  customers: CustomerGroup[];
+  totalOutstanding: number;
+  customerCount: number;
+  invoiceCount: number;
+  syncedAt: Date;
+};
 
 function formatCurrency(n: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -61,6 +69,16 @@ export default function InvoicesPage() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const [syncedAt, setSyncedAt] = useState<Date | null>(null);
+  const cache = useRef<Partial<Record<Entity, CachedData>>>({});
+
+  const applyCache = useCallback((cached: CachedData) => {
+    setCustomers(cached.customers);
+    setTotalOutstanding(cached.totalOutstanding);
+    setCustomerCount(cached.customerCount);
+    setInvoiceCount(cached.invoiceCount);
+    setSyncedAt(cached.syncedAt);
+  }, []);
 
   const fetchData = useCallback(async (ent: Entity) => {
     setLoading(true);
@@ -73,21 +91,41 @@ export default function InvoicesPage() {
         throw new Error(data.error || `HTTP ${res.status}`);
       }
       const data = await res.json();
-      setCustomers(data.customers || []);
-      setTotalOutstanding(data.totalOutstanding || 0);
-      setCustomerCount(data.customerCount || 0);
-      setInvoiceCount(data.invoiceCount || 0);
+      const now = new Date();
+      const cached: CachedData = {
+        customers: data.customers || [],
+        totalOutstanding: data.totalOutstanding || 0,
+        customerCount: data.customerCount || 0,
+        invoiceCount: data.invoiceCount || 0,
+        syncedAt: now,
+      };
+      cache.current[ent] = cached;
+      applyCache(cached);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
       setCustomers([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyCache]);
+
+  const switchEntity = useCallback((ent: Entity) => {
+    setEntity(ent);
+    setExpanded(new Set());
+    setError(null);
+    const cached = cache.current[ent];
+    if (cached) {
+      applyCache(cached);
+      setLoading(false);
+    } else {
+      fetchData(ent);
+    }
+  }, [applyCache, fetchData]);
 
   useEffect(() => {
     fetchData(entity);
-  }, [entity, fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleExpand = (customer: string) => {
     setExpanded((prev) => {
@@ -120,7 +158,7 @@ export default function InvoicesPage() {
         <div className="flex items-center gap-2 mb-6">
           <div className="inline-flex rounded-lg bg-gray-100 dark:bg-white/[0.04] p-0.5">
             <button
-              onClick={() => setEntity("flex")}
+              onClick={() => switchEntity("flex")}
               className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                 entity === "flex"
                   ? "bg-white dark:bg-white/[0.1] text-gray-900 dark:text-white shadow-sm"
@@ -130,7 +168,7 @@ export default function InvoicesPage() {
               RedTeam Flex
             </button>
             <button
-              onClick={() => setEntity("go")}
+              onClick={() => switchEntity("go")}
               className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                 entity === "go"
                   ? "bg-white dark:bg-white/[0.1] text-gray-900 dark:text-white shadow-sm"
@@ -140,7 +178,7 @@ export default function InvoicesPage() {
               RedTeam Go
             </button>
             <button
-              onClick={() => setEntity("cb-flex")}
+              onClick={() => switchEntity("cb-flex")}
               className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                 entity === "cb-flex"
                   ? "bg-white dark:bg-white/[0.1] text-gray-900 dark:text-white shadow-sm"
@@ -151,7 +189,12 @@ export default function InvoicesPage() {
             </button>
           </div>
 
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            {syncedAt && !loading && (
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                Last synced {syncedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+              </span>
+            )}
             <button
               onClick={() => fetchData(entity)}
               disabled={loading}
@@ -167,7 +210,7 @@ export default function InvoicesPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
                 </svg>
               )}
-              {loading ? "Loading..." : "Refresh"}
+              {loading ? "Syncing..." : "Refresh"}
             </button>
           </div>
         </div>
