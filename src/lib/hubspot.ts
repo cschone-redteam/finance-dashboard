@@ -7,19 +7,26 @@ function getToken(): string {
 }
 
 async function hubspotFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${HUBSPOT_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getToken()}`,
-      ...init?.headers,
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`HubSpot API ${res.status}: ${text.slice(0, 300)}`);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(`${HUBSPOT_BASE}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getToken()}`,
+        ...init?.headers,
+      },
+    });
+    if (res.status === 429) {
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      continue;
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HubSpot API ${res.status}: ${text.slice(0, 300)}`);
+    }
+    return res.json();
   }
-  return res.json();
+  throw new Error("HubSpot API 429: rate limit exceeded after retries");
 }
 
 interface CrmRecord {
@@ -292,7 +299,14 @@ export async function syncArrStack(): Promise<Row[]> {
   }));
 }
 
+let ownerCache: { data: Map<string, string>; ts: number } | null = null;
+const OWNER_CACHE_TTL = 5 * 60 * 1000;
+
 export async function getCompanyOwners(): Promise<Map<string, string>> {
+  if (ownerCache && Date.now() - ownerCache.ts < OWNER_CACHE_TTL) {
+    return ownerCache.data;
+  }
+
   const ownerMap = await getOwnerMap();
   const companies = await searchAll("companies", [
     {
@@ -311,5 +325,6 @@ export async function getCompanyOwners(): Promise<Map<string, string>> {
       if (ownerName) result.set(name, ownerName);
     }
   }
+  ownerCache = { data: result, ts: Date.now() };
   return result;
 }
