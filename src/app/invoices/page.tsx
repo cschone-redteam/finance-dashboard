@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 type Invoice = {
   customer: string;
@@ -70,6 +70,10 @@ export default function InvoicesPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [syncedAt, setSyncedAt] = useState<Date | null>(null);
+  const [ownerFilter, setOwnerFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"" | "Active" | "Churned">("");
+  const [minOutstanding, setMinOutstanding] = useState("");
+  const [maxOutstanding, setMaxOutstanding] = useState("");
   const cache = useRef<Partial<Record<Entity, CachedData>>>({});
 
   const applyCache = useCallback((cached: CachedData) => {
@@ -136,11 +140,33 @@ export default function InvoicesPage() {
     });
   };
 
-  const filtered = search
-    ? customers.filter((c) =>
-        c.customer.toLowerCase().includes(search.toLowerCase())
-      )
-    : customers;
+  const uniqueOwners = useMemo(() => {
+    const owners = new Set(customers.map((c) => c.owner).filter(Boolean));
+    return Array.from(owners).sort();
+  }, [customers]);
+
+  const filtered = useMemo(() => {
+    let result = customers;
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter((c) => c.customer.toLowerCase().includes(q));
+    }
+    if (ownerFilter) {
+      result = result.filter((c) => c.owner === ownerFilter);
+    }
+    if (statusFilter) {
+      result = result.filter((c) => c.status === statusFilter);
+    }
+    const min = minOutstanding ? parseFloat(minOutstanding) : null;
+    const max = maxOutstanding ? parseFloat(maxOutstanding) : null;
+    if (min !== null && !isNaN(min)) {
+      result = result.filter((c) => c.totalOutstanding >= min);
+    }
+    if (max !== null && !isNaN(max)) {
+      result = result.filter((c) => c.totalOutstanding <= max);
+    }
+    return result;
+  }, [customers, search, ownerFilter, statusFilter, minOutstanding, maxOutstanding]);
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
@@ -251,15 +277,79 @@ export default function InvoicesPage() {
           </div>
         )}
 
-        {/* Search */}
-        <div className="mb-4">
-          <input
-            type="text"
-            placeholder="Search customers..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full max-w-sm px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#EF373E]/30 focus:border-[#EF373E]/50"
-          />
+        {/* Filters */}
+        <div className="flex flex-wrap items-end gap-3 mb-4">
+          <div>
+            <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+              Search
+            </label>
+            <input
+              type="text"
+              placeholder="Customer name..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-48 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#EF373E]/30 focus:border-[#EF373E]/50"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+              Owner
+            </label>
+            <select
+              value={ownerFilter}
+              onChange={(e) => setOwnerFilter(e.target.value)}
+              className="w-44 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#EF373E]/30 focus:border-[#EF373E]/50"
+            >
+              <option value="">All Owners</option>
+              {uniqueOwners.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+              Status
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as "" | "Active" | "Churned")}
+              className="w-32 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#EF373E]/30 focus:border-[#EF373E]/50"
+            >
+              <option value="">All</option>
+              <option value="Active">Active</option>
+              <option value="Churned">Churn</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+              Outstanding ($)
+            </label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                placeholder="Min"
+                value={minOutstanding}
+                onChange={(e) => setMinOutstanding(e.target.value)}
+                className="w-24 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#EF373E]/30 focus:border-[#EF373E]/50 tabular-nums"
+              />
+              <span className="text-gray-400 text-xs">–</span>
+              <input
+                type="number"
+                placeholder="Max"
+                value={maxOutstanding}
+                onChange={(e) => setMaxOutstanding(e.target.value)}
+                className="w-24 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#EF373E]/30 focus:border-[#EF373E]/50 tabular-nums"
+              />
+            </div>
+          </div>
+          {(ownerFilter || statusFilter || minOutstanding || maxOutstanding) && (
+            <button
+              onClick={() => { setOwnerFilter(""); setStatusFilter(""); setMinOutstanding(""); setMaxOutstanding(""); }}
+              className="px-3 py-2 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
 
         {/* Customer list */}
