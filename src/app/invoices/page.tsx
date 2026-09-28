@@ -14,12 +14,13 @@ type Invoice = {
 type CustomerGroup = {
   customer: string;
   owner: string;
+  status: "Active" | "Churned";
   totalOutstanding: number;
   mostRecentDate: string;
   invoices: Invoice[];
 };
 
-type Entity = "flex" | "go";
+type Entity = "flex" | "go" | "cb-flex";
 
 function formatCurrency(n: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -111,7 +112,7 @@ export default function InvoicesPage() {
             Outstanding Invoices
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Open invoices by customer from QuickBooks
+            Open invoices by customer
           </p>
         </div>
 
@@ -137,6 +138,16 @@ export default function InvoicesPage() {
               }`}
             >
               RedTeam Go
+            </button>
+            <button
+              onClick={() => setEntity("cb-flex")}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                entity === "cb-flex"
+                  ? "bg-white dark:bg-white/[0.1] text-gray-900 dark:text-white shadow-sm"
+                  : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+              }`}
+            >
+              Chargebee Flex
             </button>
           </div>
 
@@ -229,6 +240,9 @@ export default function InvoicesPage() {
                   <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                     Owner
                   </th>
+                  <th className="text-center px-5 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    Active
+                  </th>
                   <th className="text-right px-5 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                     Most Recent
                   </th>
@@ -259,6 +273,7 @@ export default function InvoicesPage() {
                   <td className="px-5 py-3 text-sm font-semibold text-gray-900 dark:text-white">
                     Total ({filtered.length} customers)
                   </td>
+                  <td className="px-5 py-3" />
                   <td className="px-5 py-3" />
                   <td className="px-5 py-3" />
                   <td className="px-5 py-3 text-right text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
@@ -309,6 +324,17 @@ function CustomerRow({
         <td className="px-5 py-3 text-gray-500 dark:text-gray-400">
           {group.owner || "—"}
         </td>
+        <td className="px-5 py-3 text-center">
+          <span
+            className={`inline-block px-2 py-0.5 text-xs font-semibold rounded-full ${
+              group.status === "Active"
+                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+            }`}
+          >
+            {group.status === "Active" ? "Active" : "Churn"}
+          </span>
+        </td>
         <td className="px-5 py-3 text-right tabular-nums text-gray-500 dark:text-gray-400">
           {formatMonth(group.mostRecentDate)}
         </td>
@@ -321,7 +347,7 @@ function CustomerRow({
       </tr>
       {isOpen && (
         <tr>
-          <td colSpan={6} className="p-0">
+          <td colSpan={7} className="p-0">
             <div className="bg-gray-50/50 dark:bg-white/[0.01] border-b border-gray-100 dark:border-white/[0.04]">
               <table className="w-full text-sm">
                 <thead>
