@@ -215,8 +215,9 @@ export default function CsmInterventionPage() {
     });
   }, [customers, entityFilter, statusFilter, search, sortField, sortDir]);
 
-  const totalBalance = filtered.reduce((s, c) => s + c.totalBalance, 0);
-  const criticalCount = filtered.filter((c) => c.oldestDays > 90).length;
+  const activeFiltered = filtered.filter((c) => c.status === "Active");
+  const totalBalance = activeFiltered.reduce((s, c) => s + c.totalBalance, 0);
+  const criticalCount = activeFiltered.filter((c) => c.oldestDays > 90).length;
 
   const handleExport = useCallback(() => {
     const sheetData = filtered.map((c) => ({
@@ -267,11 +268,12 @@ export default function CsmInterventionPage() {
             <div className="flex gap-4 mb-6">
               <div className="bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/[0.06] rounded-lg px-4 py-3">
                 <div className="text-xs text-gray-500 dark:text-gray-400 font-medium">Customers</div>
-                <div className="text-lg font-semibold text-gray-900 dark:text-white mt-0.5">{filtered.length}</div>
+                <div className="text-lg font-semibold text-gray-900 dark:text-white mt-0.5">{activeFiltered.length}</div>
               </div>
               <div className="bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/[0.06] rounded-lg px-4 py-3">
                 <div className="text-xs text-gray-500 dark:text-gray-400 font-medium">Total Outstanding</div>
                 <div className="text-lg font-semibold text-gray-900 dark:text-white mt-0.5 font-mono">{fmt(totalBalance)}</div>
+                <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">Active customers only</div>
               </div>
               <div className="bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/[0.06] rounded-lg px-4 py-3">
                 <div className="text-xs text-gray-500 dark:text-gray-400 font-medium">Critical (90+ days)</div>
