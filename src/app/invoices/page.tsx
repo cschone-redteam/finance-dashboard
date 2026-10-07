@@ -270,34 +270,41 @@ export default function InvoicesPage() {
         )}
 
         {/* Summary cards */}
-        {!loading && !error && (
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-white dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/[0.06] p-5">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Total Outstanding
+        {!loading && !error && (() => {
+          const active = customers.filter((c) => c.status === "Active");
+          const activeOutstanding = active.reduce((s, c) => s + c.totalOutstanding, 0);
+          const activeCustomers = active.length;
+          const activeInvoices = active.reduce((s, c) => s + c.invoices.length, 0);
+          return (
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="bg-white dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/[0.06] p-5">
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Total Outstanding
+                </div>
+                <div className="mt-1.5 text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
+                  {formatCurrency(activeOutstanding)}
+                </div>
+                <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">Active customers only</div>
               </div>
-              <div className="mt-1.5 text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(totalOutstanding)}
+              <div className="bg-white dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/[0.06] p-5">
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Customers
+                </div>
+                <div className="mt-1.5 text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
+                  {activeCustomers}
+                </div>
+              </div>
+              <div className="bg-white dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/[0.06] p-5">
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Open Invoices
+                </div>
+                <div className="mt-1.5 text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
+                  {activeInvoices}
+                </div>
               </div>
             </div>
-            <div className="bg-white dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/[0.06] p-5">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Customers
-              </div>
-              <div className="mt-1.5 text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-                {customerCount}
-              </div>
-            </div>
-            <div className="bg-white dark:bg-white/[0.02] rounded-xl border border-gray-200 dark:border-white/[0.06] p-5">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Open Invoices
-              </div>
-              <div className="mt-1.5 text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-                {invoiceCount}
-              </div>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Filters */}
         <div className="flex flex-wrap items-end gap-3 mb-4">
