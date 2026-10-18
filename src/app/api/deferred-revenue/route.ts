@@ -59,11 +59,12 @@ function extractBillingsByProduct(
     if (amount === 0) continue;
 
     const productOwned = row.product_owned || "";
-    let product: Product = "Flex";
     const po = productOwned.toLowerCase();
+    let product: Product | null = null;
     if (po.includes("teamplayer") || po.includes("team player")) product = "TeamPlayer";
     else if (po.includes("fieldlens") || po.includes("field lens")) product = "FieldLens";
     else if (po.includes("go") || po.includes("paskr")) product = "Go";
+    if (!product) continue;
 
     if (!byMonth[month]) byMonth[month] = emptyProducts();
     byMonth[month][product] += amount;
@@ -170,7 +171,7 @@ export async function POST() {
     const cbFlex = chargebeeBillings[month] || 0;
 
     const billings = {
-      Flex: cbFlex || hsBillings.Flex,
+      Flex: cbFlex,
       Go: hsBillings.Go,
       FieldLens: hsBillings.FieldLens,
       TeamPlayer: hsBillings.TeamPlayer,
