@@ -299,6 +299,52 @@ export async function syncArrStack(): Promise<Row[]> {
   }));
 }
 
+export async function syncMarketingFunnel(): Promise<Row[]> {
+  const cutoff = getCutoffDate();
+  const contacts = await searchAll("contacts", [
+    {
+      filters: [
+        { propertyName: "createdate", operator: "GTE", value: cutoff },
+      ],
+    },
+  ], [
+    "firstname", "lastname", "email", "company",
+    "lifecyclestage", "hs_lead_status",
+    "createdate", "turned_into_mql_date", "turned_into_sql_date",
+    "first_conversion_date", "hs_analytics_source",
+  ]);
+
+  const STAGE_LABELS: Record<string, string> = {
+    subscriber: "Subscriber",
+    lead: "Lead",
+    "34209619": "Prospect",
+    marketingqualifiedlead: "MQL",
+    salesqualifiedlead: "SQL",
+    opportunity: "Opportunity",
+    customer: "Client",
+    evangelist: "Evangelist",
+    other: "Other",
+    "33382236": "Partner",
+    "38258285": "Former Client",
+    "1408599951": "Subcontractor",
+    "1400792971": "SPAM",
+    "1413425509": "Job Hunter",
+  };
+
+  return contacts.map((c) => ({
+    name: [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ") || null,
+    email: c.properties.email,
+    company: c.properties.company,
+    lifecycle_stage: STAGE_LABELS[c.properties.lifecyclestage || ""] || c.properties.lifecyclestage,
+    lead_status: c.properties.hs_lead_status,
+    create_date: c.properties.createdate,
+    mql_date: c.properties.turned_into_mql_date,
+    sql_date: c.properties.turned_into_sql_date,
+    first_conversion_date: c.properties.first_conversion_date,
+    source: c.properties.hs_analytics_source,
+  }));
+}
+
 let ownerCache: { data: Map<string, string>; ts: number } | null = null;
 const OWNER_CACHE_TTL = 5 * 60 * 1000;
 

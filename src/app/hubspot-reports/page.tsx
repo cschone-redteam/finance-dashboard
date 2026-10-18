@@ -8,6 +8,7 @@ const REPORTS = [
   { key: "renewals" as const, label: "Renewals" },
   { key: "bookings" as const, label: "Bookings" },
   { key: "arr-stack" as const, label: "ARR Stack" },
+  { key: "marketing-funnel" as const, label: "Marketing Funnel" },
 ];
 
 type ReportKey = (typeof REPORTS)[number]["key"];
@@ -68,6 +69,17 @@ const REPORT_COLUMNS: Record<ReportKey, ColumnDef[]> = {
     { key: "csm_owner", label: "CSM Owner" },
     { key: "city", label: "City" },
     { key: "state", label: "State" },
+  ],
+  "marketing-funnel": [
+    { key: "name", label: "Name" },
+    { key: "email", label: "Email" },
+    { key: "company", label: "Company" },
+    { key: "lifecycle_stage", label: "Stage" },
+    { key: "lead_status", label: "Lead Status" },
+    { key: "source", label: "Source" },
+    { key: "create_date", label: "Created", format: "date" },
+    { key: "mql_date", label: "MQL Date", format: "date" },
+    { key: "sql_date", label: "SQL Date", format: "date" },
   ],
 };
 
@@ -140,6 +152,18 @@ const EXPORT_COLUMNS: Record<ReportKey, ColumnDef[]> = {
     { key: "go_subscription", label: "Go Sub", format: "currency" },
     { key: "fieldlens_subscription", label: "Fieldlens Sub", format: "currency" },
     { key: "teamplayer_subscription", label: "TeamPlayer Sub", format: "currency" },
+  ],
+  "marketing-funnel": [
+    { key: "name", label: "Name" },
+    { key: "email", label: "Email" },
+    { key: "company", label: "Company" },
+    { key: "lifecycle_stage", label: "Stage" },
+    { key: "lead_status", label: "Lead Status" },
+    { key: "source", label: "Source" },
+    { key: "create_date", label: "Created", format: "date" },
+    { key: "mql_date", label: "MQL Date", format: "date" },
+    { key: "sql_date", label: "SQL Date", format: "date" },
+    { key: "first_conversion_date", label: "First Conversion", format: "date" },
   ],
 };
 
@@ -255,6 +279,20 @@ function ReportSummary({ reportKey, rows }: { reportKey: ReportKey; rows: Report
           { label: "Paying Clients", value: rows.length.toString() },
           { label: "Total Sub ARR", value: formatCellValue(sumField("subscription_arr"), "currency") },
         ];
+      case "marketing-funnel": {
+        const stageCount = (stage: string) => rows.filter((r) => r.lifecycle_stage === stage).length;
+        const mqls = stageCount("MQL");
+        const sqls = stageCount("SQL");
+        const opps = stageCount("Opportunity");
+        const clients = stageCount("Client");
+        return [
+          { label: "Total Contacts", value: rows.length.toString() },
+          { label: "MQLs", value: mqls.toString() },
+          { label: "SQLs", value: sqls.toString() },
+          { label: "Opportunities", value: opps.toString() },
+          { label: "Clients", value: clients.toString() },
+        ];
+      }
     }
   }, [reportKey, rows]);
 
@@ -287,6 +325,7 @@ const REPORT_CHART_CONFIG: Record<ReportKey, { field: string; color: string; lab
   renewals: { field: "arr", color: "#10b981", label: "Renewed ARR" },
   bookings: { field: "amount", color: "#3b82f6", label: "Bookings Amount" },
   "arr-stack": { field: "subscription_arr", color: "#8b5cf6", label: "Subscription ARR" },
+  "marketing-funnel": { field: "", color: "#f59e0b", label: "Marketing Funnel" },
 };
 
 function fmt$(n: number) {
@@ -307,7 +346,7 @@ function ReportMonthlyChart({ reportKey, rows }: { reportKey: ReportKey; rows: R
   const config = REPORT_CHART_CONFIG[reportKey];
 
   const monthly = useMemo(() => {
-    if (reportKey === "arr-stack") return null;
+    if (reportKey === "arr-stack" || reportKey === "marketing-funnel") return null;
 
     const vals = new Array(12).fill(0);
     const counts = new Array(12).fill(0);
@@ -342,6 +381,76 @@ function ReportMonthlyChart({ reportKey, rows }: { reportKey: ReportKey; rows: R
     const grandTotal = entries.reduce((s, [, v]) => s + v.total, 0);
     return { entries, grandTotal };
   }, [reportKey, rows]);
+
+  const funnelData = useMemo(() => {
+    if (reportKey !== "marketing-funnel") return null;
+    const FUNNEL_STAGES = ["Lead", "Subscriber", "MQL", "SQL", "Opportunity", "Client"];
+    const stageCounts: { stage: string; count: number }[] = [];
+    for (const stage of FUNNEL_STAGES) {
+      stageCounts.push({ stage, count: rows.filter((r) => r.lifecycle_stage === stage).length });
+    }
+    const otherCount = rows.filter((r) => !FUNNEL_STAGES.includes(String(r.lifecycle_stage || ""))).length;
+    if (otherCount > 0) stageCounts.push({ stage: "Other", count: otherCount });
+
+    const bySrc: Record<string, number> = {};
+    for (const row of rows) {
+      const src = String(row.source || "Unknown");
+      bySrc[src] = (bySrc[src] || 0) + 1;
+    }
+    const topSources = Object.entries(bySrc).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+    return { stageCounts, topSources };
+  }, [reportKey, rows]);
+
+  if (reportKey === "marketing-funnel" && funnelData) {
+    const maxCount = Math.max(...funnelData.stageCounts.map((s) => s.count), 1);
+    const maxSrc = Math.max(...funnelData.topSources.map(([, c]) => c), 1);
+    const STAGE_COLORS: Record<string, string> = {
+      Lead: "#94a3b8", Subscriber: "#64748b", MQL: "#f59e0b", SQL: "#f97316",
+      Opportunity: "#3b82f6", Client: "#10b981", Other: "#a1a1aa",
+    };
+    return (
+      <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white dark:bg-white/[0.02] border border-gray-200 dark:border-white/[0.06] rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Lifecycle Funnel</h3>
+            <span className="text-xs text-gray-400">{rows.length} contacts</span>
+          </div>
+          <div className="space-y-2">
+            {funnelData.stageCounts.filter((s) => s.count > 0).map(({ stage, count }) => (
+              <div key={stage} className="flex items-center gap-3">
+                <div className="w-24 text-xs text-gray-600 dark:text-gray-400 truncate">{stage}</div>
+                <div className="flex-1 h-5 bg-gray-100 dark:bg-white/[0.04] rounded overflow-hidden">
+                  <div
+                    className="h-full rounded transition-all"
+                    style={{ width: `${(count / maxCount) * 100}%`, backgroundColor: STAGE_COLORS[stage] || "#a1a1aa" }}
+                  />
+                </div>
+                <div className="w-10 text-right text-xs font-mono text-gray-700 dark:text-gray-300">{count}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white dark:bg-white/[0.02] border border-gray-200 dark:border-white/[0.06] rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Top Sources</h3>
+          <div className="space-y-2">
+            {funnelData.topSources.map(([src, count]) => (
+              <div key={src} className="flex items-center gap-3">
+                <div className="w-28 text-xs text-gray-600 dark:text-gray-400 truncate" title={src}>{src}</div>
+                <div className="flex-1 h-5 bg-gray-100 dark:bg-white/[0.04] rounded overflow-hidden">
+                  <div
+                    className="h-full rounded transition-all"
+                    style={{ width: `${(count / maxSrc) * 100}%`, backgroundColor: "#f59e0b" }}
+                  />
+                </div>
+                <div className="w-10 text-right text-xs font-mono text-gray-700 dark:text-gray-300">{count}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (reportKey === "arr-stack" && arrBySegment) {
     const maxVal = Math.max(...arrBySegment.entries.map(([, v]) => v.total), 1);
@@ -422,6 +531,7 @@ export default function HubSpotReportsPage() {
     renewals: { rows: [], synced_at: null, loading: false },
     bookings: { rows: [], synced_at: null, loading: false },
     "arr-stack": { rows: [], synced_at: null, loading: false },
+    "marketing-funnel": { rows: [], synced_at: null, loading: false },
   });
   const [sort, setSort] = useState<SortConfig>(null);
   const [search, setSearch] = useState("");
