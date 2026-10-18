@@ -5,6 +5,7 @@ import {
   parseMonthlyPnLReport,
   fetchBalanceSheetMonthly,
   parseMonthlyDeferredRevenue,
+  fetchClasses,
   type MonthlyPnLEntry,
 } from "@/lib/qbo";
 import { fetchChargebeeMonthlyBillings } from "@/lib/chargebee";
@@ -98,29 +99,80 @@ export async function POST() {
   let rtDrMonthly: Record<string, number> = {};
   let goDrMonthly: Record<string, number> = {};
 
+  // Fetch classes from RedTeam to find TeamPlayer class IDs
+  let teamPlayerClassIds: string[] = [];
+  try {
+    const classes = await fetchClasses(REDTEAM_REALM);
+    teamPlayerClassIds = classes
+      .filter((c) => c.Name.toLowerCase().includes("teamplayer") || c.Name.toLowerCase().includes("team player"))
+      .map((c) => c.Id);
+  } catch (err) {
+    console.error("RedTeam classes error:", err);
+  }
+
   // Fetch P&L and Balance Sheet from both realms in parallel
-  const [rtPnlResult, goPnlResult, rtBsResult, goBsResult, cbResult] = await Promise.allSettled([
+  // Also fetch TeamPlayer-class-filtered P&L for each TP class
+  const basePromises = [
     fetchProfitAndLossMonthly(REDTEAM_REALM, startDate, endDate),
     fetchProfitAndLossMonthly(PASKR_REALM, startDate, endDate),
     fetchBalanceSheetMonthly(REDTEAM_REALM, bsStartDate, bsEndDate),
     fetchBalanceSheetMonthly(PASKR_REALM, bsStartDate, bsEndDate),
     fetchChargebeeMonthlyBillings(year),
-  ]);
+  ] as const;
+  const tpPromises = teamPlayerClassIds.map((id) =>
+    fetchProfitAndLossMonthly(REDTEAM_REALM, startDate, endDate, id),
+  );
 
-  // RedTeam P&L → Flex, FieldLens, TeamPlayer revenue
+  const [rtPnlResult, goPnlResult, rtBsResult, goBsResult, cbResult, ...tpPnlResults] =
+    await Promise.allSettled([...basePromises, ...tpPromises]);
+
+  // RedTeam P&L → total revenue and FieldLens revenue (by account name)
+  let rtTotalRevenueByMonth: Record<string, number> = {};
+  let rtFieldLensRevenueByMonth: Record<string, number> = {};
   if (rtPnlResult.status === "fulfilled") {
     const entries = parseMonthlyPnLReport(rtPnlResult.value);
-    rtRevenueByMonth = extractRevenueByProduct(entries, ["Flex", "FieldLens", "TeamPlayer"]);
+    const allRevenue = extractRevenueByProduct(entries);
+    // Total revenue across all products (everything in revenue sections)
+    for (const [month, prods] of Object.entries(allRevenue)) {
+      rtTotalRevenueByMonth[month] = prods.Flex + prods.FieldLens + prods.TeamPlayer + prods.Go;
+      rtFieldLensRevenueByMonth[month] = prods.FieldLens;
+    }
     sources.push("qbo-pnl-redteam");
   } else {
     console.error("RedTeam P&L error:", rtPnlResult.reason);
+  }
+
+  // TeamPlayer revenue from class-filtered P&L
+  let rtTeamPlayerRevenueByMonth: Record<string, number> = {};
+  for (const result of tpPnlResults) {
+    if (result.status === "fulfilled") {
+      const entries = parseMonthlyPnLReport(result.value);
+      for (const entry of entries) {
+        if (!isRevenueSection(entry.section)) continue;
+        for (const [month, amount] of Object.entries(entry.monthly)) {
+          rtTeamPlayerRevenueByMonth[month] = (rtTeamPlayerRevenueByMonth[month] || 0) + amount;
+        }
+      }
+    }
+  }
+
+  // Compute per-product revenue: FieldLens by account, TeamPlayer by class, Flex = residual
+  for (const month of Object.keys(rtTotalRevenueByMonth)) {
+    const total = rtTotalRevenueByMonth[month] || 0;
+    const fl = rtFieldLensRevenueByMonth[month] || 0;
+    const tp = rtTeamPlayerRevenueByMonth[month] || 0;
+    const flex = total - fl - tp;
+    if (!rtRevenueByMonth[month]) rtRevenueByMonth[month] = emptyProducts();
+    rtRevenueByMonth[month].Flex = flex;
+    rtRevenueByMonth[month].FieldLens = fl;
+    rtRevenueByMonth[month].TeamPlayer = tp;
   }
 
   // PASKR P&L → Go revenue (all income = Go)
   if (goPnlResult.status === "fulfilled") {
     const entries = parseMonthlyPnLReport(goPnlResult.value);
     for (const entry of entries) {
-      if (!entry.section.toLowerCase().includes("income")) continue;
+      if (!isRevenueSection(entry.section)) continue;
       for (const [month, amount] of Object.entries(entry.monthly)) {
         goRevenueByMonth[month] = (goRevenueByMonth[month] || 0) + amount;
       }
