@@ -48,7 +48,7 @@ function fmtCell(n: number, dash?: boolean): string {
 }
 
 const BILLING_SOURCE_TAG: Record<string, string> = {
-  Flex: "Chargebee",
+  Flex: "QBO",
   Go: "QBO/PASKR",
   FieldLens: "QBO",
   TeamPlayer: "QBO",

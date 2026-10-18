@@ -28,14 +28,27 @@ function emptyProducts(): Record<Product, number> {
   return { Flex: 0, Go: 0, FieldLens: 0, TeamPlayer: 0 };
 }
 
+function isRevenueSection(section: string): boolean {
+  const s = section.toLowerCase();
+  return s.includes("income") || s.includes("revenue") || /^4\d{4}\b/.test(section);
+}
+
+function classifyRevenueAccount(section: string, accountName: string): Product | null {
+  const direct = classifyProduct(accountName);
+  if (direct) return direct;
+  // Unclassified accounts under Gross Revenue (40100) or Refunds (48000) → Flex
+  if (/^4\d{4}\b/.test(section) && !section.toLowerCase().includes("fieldlens")) return "Flex";
+  return null;
+}
+
 function extractRevenueByProduct(
   entries: MonthlyPnLEntry[],
   productFilter?: Product[],
 ): Record<string, Record<Product, number>> {
   const byMonth: Record<string, Record<Product, number>> = {};
   for (const entry of entries) {
-    if (!entry.section.toLowerCase().includes("income")) continue;
-    const product = classifyProduct(entry.accountName);
+    if (!isRevenueSection(entry.section)) continue;
+    const product = classifyRevenueAccount(entry.section, entry.accountName);
     if (!product) continue;
     if (productFilter && !productFilter.includes(product)) continue;
     for (const [month, amount] of Object.entries(entry.monthly)) {
@@ -175,17 +188,35 @@ export async function POST() {
     // Go billings from PASKR BS change + revenue
     const goBillings = (goDrEnd - goDrBegin) + goRev;
 
-    // Flex billings from Chargebee; remaining RedTeam billings go to FieldLens + TeamPlayer
-    const flexBillings = chargebeeBillings[month] || 0;
-    const remainingBillings = rtTotalBillings - flexBillings;
-
+    // Split RedTeam billings across Flex/FieldLens/TeamPlayer
+    const cbFlex = chargebeeBillings[month] || 0;
+    const flexRev = rtRev.Flex;
     const flRev = rtRev.FieldLens;
     const tpRev = rtRev.TeamPlayer;
-    const flTpTotal = flRev + tpRev;
-    const flBillings = flTpTotal > 0
-      ? remainingBillings * (flRev / flTpTotal)
-      : remainingBillings / 2;
-    const tpBillings = remainingBillings - flBillings;
+
+    let flexBillings: number;
+    let flBillings: number;
+    let tpBillings: number;
+
+    if (cbFlex > 0) {
+      // Chargebee has Flex data — use it, split remainder to FieldLens/TeamPlayer
+      flexBillings = cbFlex;
+      const remaining = rtTotalBillings - cbFlex;
+      const flTpTotal = flRev + tpRev;
+      flBillings = flTpTotal > 0 ? remaining * (flRev / flTpTotal) : remaining / 2;
+      tpBillings = remaining - flBillings;
+    } else {
+      // No Chargebee — split all RedTeam billings by QBO revenue ratio
+      if (rtTotalRevenue > 0) {
+        flexBillings = rtTotalBillings * (flexRev / rtTotalRevenue);
+        flBillings = rtTotalBillings * (flRev / rtTotalRevenue);
+        tpBillings = rtTotalBillings - flexBillings - flBillings;
+      } else {
+        flexBillings = rtTotalBillings / 3;
+        flBillings = rtTotalBillings / 3;
+        tpBillings = rtTotalBillings - flexBillings - flBillings;
+      }
+    }
 
     const billings = {
       Flex: flexBillings,
