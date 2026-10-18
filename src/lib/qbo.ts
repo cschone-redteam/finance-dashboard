@@ -779,6 +779,76 @@ export function parseMonthlyPnLReport(
   return entries;
 }
 
+export async function fetchBalanceSheetMonthly(
+  realmId: string,
+  startDate: string,
+  endDate: string,
+): Promise<QboReportResponse> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+    summarize_column_by: "Month",
+  });
+
+  const res = await fetch(
+    `${apiBase()}/v3/company/${realmId}/reports/BalanceSheet?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`QBO API error: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+export function parseMonthlyDeferredRevenue(
+  report: QboReportResponse,
+): Record<string, number> {
+  const columns = report.Columns?.Column || [];
+  const monthKeys: string[] = [];
+  for (let i = 1; i < columns.length; i++) {
+    const title = columns[i].ColTitle;
+    if (title === "TOTAL") continue;
+    const parsed = parseMonthTitle(title);
+    if (parsed) monthKeys.push(parsed);
+  }
+
+  const result: Record<string, number> = {};
+
+  function walkRows(rows: QboRow[]) {
+    for (const row of rows) {
+      if (row.Header?.ColData && row.Rows?.Row) {
+        walkRows(row.Rows.Row);
+      }
+      if (row.ColData && row.ColData.length >= 2) {
+        const name = (row.ColData[0]?.value || "").toLowerCase();
+        if (name.includes("deferred revenue") || name.includes("deferred rev") || name.includes("unearned revenue")) {
+          for (let i = 0; i < monthKeys.length; i++) {
+            const val = parseFloat(row.ColData[i + 1]?.value || "0") || 0;
+            result[monthKeys[i]] = (result[monthKeys[i]] || 0) + val;
+          }
+        }
+      }
+    }
+  }
+
+  for (const row of report.Rows?.Row || []) {
+    if (row.Header?.ColData && row.Rows?.Row) {
+      walkRows(row.Rows.Row);
+    }
+  }
+
+  return result;
+}
+
 export function parseTrialBalanceReport(
   report: QboReportResponse
 ): ParsedTBRow[] {

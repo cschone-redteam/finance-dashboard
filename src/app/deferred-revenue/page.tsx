@@ -47,11 +47,11 @@ function fmtCell(n: number, dash?: boolean): string {
   return fmt$(n);
 }
 
-const SOURCE_TAG: Record<string, string> = {
+const BILLING_SOURCE_TAG: Record<string, string> = {
   Flex: "Chargebee",
-  Go: "HubSpot",
-  FieldLens: "HubSpot",
-  TeamPlayer: "HubSpot",
+  Go: "QBO/PASKR",
+  FieldLens: "QBO",
+  TeamPlayer: "QBO",
 };
 
 type RowKind = "header" | "detail" | "subtotal" | "total" | "spacer" | "balance" | "reconcile";
@@ -86,7 +86,7 @@ function buildMatrix(data: WaterfallData): MatrixRow[] {
 
   for (const p of PRODUCTS) {
     const v = vals((m) => m.billings[p]);
-    rows.push({ kind: "detail", label: `  ${p}`, source: SOURCE_TAG[p], values: v, ytd: sum(v) });
+    rows.push({ kind: "detail", label: `  ${p}`, source: BILLING_SOURCE_TAG[p], values: v, ytd: sum(v) });
   }
 
   const totalAdd = vals((m) => m.billings.total);
@@ -214,7 +214,7 @@ export default function DeferredRevenuePage() {
       <div className="mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">Deferred Revenue Waterfall</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">QuickBooks + HubSpot + Chargebee</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">QuickBooks (RedTeam + PASKR) + Chargebee</p>
         </div>
 
         {syncError && (
@@ -260,8 +260,9 @@ export default function DeferredRevenuePage() {
           )}
           {waterfall?.sources && waterfall.sources.length > 0 && (
             <div className="ml-auto flex items-center gap-1.5">
-              {waterfall.sources.includes("qbo-pnl") && <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">QBO</span>}
-              {waterfall.sources.includes("hubspot") && <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400">HubSpot</span>}
+              {waterfall.sources.some((s) => s.startsWith("qbo-")) && <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">QBO</span>}
+              {waterfall.sources.some((s) => s.includes("redteam")) && <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">RedTeam</span>}
+              {waterfall.sources.some((s) => s.includes("paskr")) && <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400">PASKR</span>}
               {waterfall.sources.includes("chargebee") && <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">Chargebee</span>}
             </div>
           )}
@@ -275,7 +276,7 @@ export default function DeferredRevenuePage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
             </svg>
             <p className="text-gray-400 text-sm font-medium">No deferred revenue data</p>
-            <p className="text-xs text-gray-400 mt-1">Click &quot;Sync All Sources&quot; to pull data from QBO, HubSpot, and Chargebee</p>
+            <p className="text-xs text-gray-400 mt-1">Click &quot;Sync All Sources&quot; to pull data from QBO (RedTeam + PASKR) and Chargebee</p>
           </div>
         ) : (
           <>
@@ -351,8 +352,7 @@ export default function DeferredRevenuePage() {
                             {row.label}
                             {row.source && (
                               <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium
-                                ${row.source === "QBO" ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : ""}
-                                ${row.source === "HubSpot" ? "bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400" : ""}
+                                ${row.source === "QBO" || row.source === "QBO/PASKR" ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : ""}
                                 ${row.source === "Chargebee" ? "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400" : ""}
                               `}>
                                 {row.source}
@@ -391,7 +391,7 @@ export default function DeferredRevenuePage() {
             </div>
 
             <div className="mt-4 flex items-center gap-4 text-[10px] text-gray-400 dark:text-gray-500">
-              <span>Additions: Flex from Chargebee invoices, Go / FieldLens / TeamPlayer from HubSpot bookings</span>
+              <span>Additions: Flex from Chargebee, Go from QBO PASKR, FieldLens / TeamPlayer from QBO RedTeam</span>
               <span className="text-gray-300 dark:text-gray-700">|</span>
               <span>Subtractions: Revenue recognized from QBO P&L</span>
             </div>
