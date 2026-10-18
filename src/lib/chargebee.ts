@@ -115,6 +115,28 @@ function epochToDate(epoch: number): string {
   return new Date(epoch * 1000).toISOString().slice(0, 10);
 }
 
+export async function fetchChargebeeMonthlyBillings(
+  year: number,
+): Promise<Record<string, number>> {
+  const startEpoch = Math.floor(new Date(`${year}-01-01T00:00:00Z`).getTime() / 1000);
+  const endEpoch = Math.floor(new Date(`${year + 1}-01-01T00:00:00Z`).getTime() / 1000);
+
+  const invoices = await listAllInvoices({
+    "date[after]": startEpoch.toString(),
+    "date[before]": endEpoch.toString(),
+    "status[in]": "[paid,payment_due,posted]",
+    "sort_by[asc]": "date",
+  });
+
+  const monthly: Record<string, number> = {};
+  for (const inv of invoices) {
+    const d = new Date(inv.date * 1000);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    monthly[key] = (monthly[key] || 0) + inv.total / 100;
+  }
+  return monthly;
+}
+
 export async function fetchChargebeeOutstandingInvoices(): Promise<
   ChargebeeOutstandingInvoice[]
 > {
