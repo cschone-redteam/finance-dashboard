@@ -156,11 +156,10 @@ export async function POST() {
     console.error("Chargebee error:", err);
   }
 
-  const allMonthKeys = new Set<string>();
-  for (const m of Object.keys(revenueByMonth)) allMonthKeys.add(m);
-  for (const m of Object.keys(billingsByMonth)) allMonthKeys.add(m);
-  for (const m of Object.keys(chargebeeBillings)) allMonthKeys.add(m);
-  const monthKeys = [...allMonthKeys].sort();
+  const monthKeys: string[] = [];
+  for (let m = 1; m <= 12; m++) {
+    monthKeys.push(`${year}-${String(m).padStart(2, "0")}`);
+  }
 
   const months: Record<string, WaterfallMonth> = {};
   let prevEnding = 0;
