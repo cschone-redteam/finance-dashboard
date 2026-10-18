@@ -283,13 +283,11 @@ function ReportSummary({ reportKey, rows }: { reportKey: ReportKey; rows: Report
         const stageCount = (stage: string) => rows.filter((r) => r.lifecycle_stage === stage).length;
         const mqls = stageCount("MQL");
         const sqls = stageCount("SQL");
-        const opps = stageCount("Opportunity");
         const clients = stageCount("Client");
         return [
-          { label: "Total Contacts", value: rows.length.toString() },
+          { label: "Total", value: rows.length.toString() },
           { label: "MQLs", value: mqls.toString() },
           { label: "SQLs", value: sqls.toString() },
-          { label: "Opportunities", value: opps.toString() },
           { label: "Clients", value: clients.toString() },
         ];
       }
@@ -384,13 +382,11 @@ function ReportMonthlyChart({ reportKey, rows }: { reportKey: ReportKey; rows: R
 
   const funnelData = useMemo(() => {
     if (reportKey !== "marketing-funnel") return null;
-    const FUNNEL_STAGES = ["Lead", "Subscriber", "MQL", "SQL", "Opportunity", "Client"];
+    const FUNNEL_STAGES = ["MQL", "SQL", "Client"];
     const stageCounts: { stage: string; count: number }[] = [];
     for (const stage of FUNNEL_STAGES) {
       stageCounts.push({ stage, count: rows.filter((r) => r.lifecycle_stage === stage).length });
     }
-    const otherCount = rows.filter((r) => !FUNNEL_STAGES.includes(String(r.lifecycle_stage || ""))).length;
-    if (otherCount > 0) stageCounts.push({ stage: "Other", count: otherCount });
 
     const bySrc: Record<string, number> = {};
     for (const row of rows) {

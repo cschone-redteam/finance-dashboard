@@ -302,13 +302,13 @@ export async function syncArrStack(): Promise<Row[]> {
 
 export async function syncMarketingFunnel(): Promise<Row[]> {
   const cutoffTs = new Date(getCutoffDate()).getTime().toString();
-  const contacts = await searchAll("contacts", [
-    {
-      filters: [
-        { propertyName: "createdate", operator: "GTE", value: cutoffTs },
-      ],
-    },
-  ], [
+  const stages = ["marketingqualifiedlead", "salesqualifiedlead", "customer"];
+  const contacts = await searchAll("contacts", stages.map((stage) => ({
+    filters: [
+      { propertyName: "createdate", operator: "GTE", value: cutoffTs },
+      { propertyName: "lifecyclestage", operator: "EQ", value: stage },
+    ],
+  })), [
     "firstname", "lastname", "email", "company",
     "lifecyclestage", "hs_lead_status",
     "createdate", "turned_into_mql_date", "turned_into_sql_date",
