@@ -70,6 +70,7 @@ async function searchAll(
 
     all.push(...data.results);
     after = data.paging?.next?.after;
+    if (after && parseInt(after, 10) >= 10000) break;
   } while (after);
 
   return all;
@@ -310,9 +311,7 @@ export async function syncMarketingFunnel(): Promise<Row[]> {
   ], [
     "firstname", "lastname", "email", "company",
     "lifecyclestage", "hs_lead_status",
-    "createdate",
-    "hs_lifecyclestage_marketingqualifiedlead_date",
-    "hs_lifecyclestage_salesqualifiedlead_date",
+    "createdate", "turned_into_mql_date", "turned_into_sql_date",
     "first_conversion_date", "hs_analytics_source",
   ]);
 
@@ -340,8 +339,8 @@ export async function syncMarketingFunnel(): Promise<Row[]> {
     lifecycle_stage: STAGE_LABELS[c.properties.lifecyclestage || ""] || c.properties.lifecyclestage,
     lead_status: c.properties.hs_lead_status,
     create_date: c.properties.createdate,
-    mql_date: c.properties.hs_lifecyclestage_marketingqualifiedlead_date,
-    sql_date: c.properties.hs_lifecyclestage_salesqualifiedlead_date,
+    mql_date: c.properties.turned_into_mql_date,
+    sql_date: c.properties.turned_into_sql_date,
     first_conversion_date: c.properties.first_conversion_date,
     source: c.properties.hs_analytics_source,
   }));
