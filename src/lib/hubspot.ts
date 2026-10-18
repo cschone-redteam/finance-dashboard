@@ -300,17 +300,19 @@ export async function syncArrStack(): Promise<Row[]> {
 }
 
 export async function syncMarketingFunnel(): Promise<Row[]> {
-  const cutoff = getCutoffDate();
+  const cutoffTs = new Date(getCutoffDate()).getTime().toString();
   const contacts = await searchAll("contacts", [
     {
       filters: [
-        { propertyName: "createdate", operator: "GTE", value: cutoff },
+        { propertyName: "createdate", operator: "GTE", value: cutoffTs },
       ],
     },
   ], [
     "firstname", "lastname", "email", "company",
     "lifecyclestage", "hs_lead_status",
-    "createdate", "turned_into_mql_date", "turned_into_sql_date",
+    "createdate",
+    "hs_lifecyclestage_marketingqualifiedlead_date",
+    "hs_lifecyclestage_salesqualifiedlead_date",
     "first_conversion_date", "hs_analytics_source",
   ]);
 
@@ -338,8 +340,8 @@ export async function syncMarketingFunnel(): Promise<Row[]> {
     lifecycle_stage: STAGE_LABELS[c.properties.lifecyclestage || ""] || c.properties.lifecyclestage,
     lead_status: c.properties.hs_lead_status,
     create_date: c.properties.createdate,
-    mql_date: c.properties.turned_into_mql_date,
-    sql_date: c.properties.turned_into_sql_date,
+    mql_date: c.properties.hs_lifecyclestage_marketingqualifiedlead_date,
+    sql_date: c.properties.hs_lifecyclestage_salesqualifiedlead_date,
     first_conversion_date: c.properties.first_conversion_date,
     source: c.properties.hs_analytics_source,
   }));
