@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 const MONTHS = [
   "Jan 26", "Feb 26", "Mar 26", "Apr 26", "May 26", "Jun 26",
   "Jul 26", "Aug 26", "Sep 26", "Oct 26", "Nov 26", "Dec 26",
 ];
 
-const ACTUAL_THROUGH = 7; // 0-indexed: Jan(0)..Aug(7) = Actual, Sep(8)..Dec(11) = Forecast
+const ACTUAL_THROUGH = 7;
+
+const PRODUCTS = ["Flex", "Go", "FieldLens", "TeamPlayer"] as const;
+type Product = (typeof PRODUCTS)[number];
 
 type RowKey = "beginning" | "new" | "upsell" | "expansion" | "price_increase" | "downsell" | "churn" | "ending";
 
@@ -16,20 +19,32 @@ type RowDef = {
   label: string;
   bold?: boolean;
   border?: "top";
+  expandable?: boolean;
 };
 
 const ROW_DEFS: RowDef[] = [
   { key: "beginning", label: "Beginning ARR", bold: true },
-  { key: "new", label: "(+) New" },
+  { key: "new", label: "(+) New", expandable: true },
   { key: "upsell", label: "(+) Upsell" },
-  { key: "expansion", label: "(+) Expansion" },
+  { key: "expansion", label: "(+) Expansion", expandable: true },
   { key: "price_increase", label: "(+) Price Increase" },
-  { key: "downsell", label: "(-) Downsell" },
-  { key: "churn", label: "(-) Churn" },
+  { key: "downsell", label: "(-) Downsell", expandable: true },
+  { key: "churn", label: "(-) Churn", expandable: true },
   { key: "ending", label: "Ending ARR", bold: true, border: "top" },
 ];
 
 const INPUT_ROWS: RowKey[] = ["beginning", "new", "upsell", "expansion", "price_increase", "downsell", "churn"];
+
+type ProductData = Record<Product, number[]>;
+
+function emptyProductData(): ProductData {
+  return {
+    Flex: new Array(12).fill(0),
+    Go: new Array(12).fill(0),
+    FieldLens: new Array(12).fill(0),
+    TeamPlayer: new Array(12).fill(0),
+  };
+}
 
 function initData(): Record<RowKey, number[]> {
   const empty = () => new Array(12).fill(0);
@@ -85,8 +100,29 @@ function fmt(n: number, negative?: boolean): string {
   return negative ? `(${str})` : str;
 }
 
+const PRODUCT_COLORS: Record<Product, string> = {
+  Flex: "text-blue-600 dark:text-blue-400",
+  Go: "text-purple-600 dark:text-purple-400",
+  FieldLens: "text-emerald-600 dark:text-emerald-400",
+  TeamPlayer: "text-amber-600 dark:text-amber-400",
+};
+
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={`w-3.5 h-3.5 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+    >
+      <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" />
+    </svg>
+  );
+}
+
 export default function ArrRollforwardPage() {
   const [rawData, setRawData] = useState<Record<RowKey, number[]>>(initData);
+  const [productBreakdowns, setProductBreakdowns] = useState<Record<string, ProductData>>({});
+  const [expanded, setExpanded] = useState<Set<RowKey>>(new Set());
   const [loading, setLoading] = useState(true);
   const [inputKey, setInputKey] = useState(0);
 
@@ -97,16 +133,27 @@ export default function ArrRollforwardPage() {
         if (!res.ok) throw new Error("Failed to load rollforward data");
         const api = await res.json();
 
+        const breakdowns: Record<string, ProductData> = {};
+
         setRawData((prev) => {
           const next = { ...prev };
           next.beginning = [...prev.beginning];
           next.beginning[0] = 7540694;
-          next.new = api.new || prev.new;
-          next.churn = api.churn || prev.churn;
-          next.expansion = api.expansion || prev.expansion;
-          next.downsell = api.downsell || prev.downsell;
+
+          for (const key of ["new", "churn", "expansion", "downsell"] as const) {
+            const cat = api[key];
+            if (cat && cat.total) {
+              next[key] = cat.total;
+              breakdowns[key] = cat.byProduct;
+            } else if (cat && Array.isArray(cat)) {
+              next[key] = cat;
+            }
+          }
+
           return next;
         });
+
+        setProductBreakdowns(breakdowns);
         setInputKey((k) => k + 1);
       } catch (err) {
         console.error("Rollforward load error:", err);
@@ -126,6 +173,15 @@ export default function ArrRollforwardPage() {
 
   const data = computeEnding(rawData);
 
+  const toggleExpand = (key: RowKey) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const handleChange = (row: RowKey, monthIdx: number, value: string) => {
     const num = parseFloat(value.replace(/[,$()]/g, "")) || 0;
     setRawData((prev) => {
@@ -134,6 +190,39 @@ export default function ArrRollforwardPage() {
       return next;
     });
     setInputKey((k) => k + 1);
+  };
+
+  const renderProductRow = (parentKey: RowKey, product: Product) => {
+    const breakdown = productBreakdowns[parentKey];
+    if (!breakdown) return null;
+    const values = breakdown[product];
+    if (!values || values.every((v) => v === 0)) return null;
+    const isNegativeRow = parentKey === "downsell" || parentKey === "churn";
+
+    return (
+      <tr key={`${parentKey}-${product}`} className="bg-gray-50/30 dark:bg-white/[0.008]">
+        <td className="sticky left-0 z-10 pl-9 pr-4 py-1.5 border-r border-gray-200 dark:border-white/[0.06] whitespace-nowrap bg-gray-50/30 dark:bg-[#0d0d0d]">
+          <span className={`text-xs font-medium ${PRODUCT_COLORS[product]}`}>
+            {product}
+          </span>
+        </td>
+        {MONTHS.map((_, i) => {
+          const val = values[i];
+          return (
+            <td
+              key={i}
+              className={`px-3 py-1.5 text-right font-mono tabular-nums whitespace-nowrap text-xs border-b border-gray-100/50 dark:border-white/[0.02] ${
+                isNegativeRow
+                  ? "text-red-500/80 dark:text-red-400/70"
+                  : "text-gray-500 dark:text-gray-400"
+              } ${i > ACTUAL_THROUGH ? "bg-amber-50/20 dark:bg-amber-950/5" : ""}`}
+            >
+              {fmt(val, isNegativeRow)}
+            </td>
+          );
+        })}
+      </tr>
+    );
   };
 
   return (
@@ -193,78 +282,95 @@ export default function ArrRollforwardPage() {
                 const isEnding = row.key === "ending";
                 const isBeginning = row.key === "beginning";
                 const isNegativeRow = row.key === "downsell" || row.key === "churn";
+                const isExpanded = expanded.has(row.key);
+                const hasBreakdown = row.expandable && !!productBreakdowns[row.key];
+
                 return (
-                  <tr
-                    key={row.key}
-                    className={`${row.bold ? "bg-gray-50/50 dark:bg-white/[0.015]" : ""} ${
-                      row.border === "top" ? "border-t-2 border-gray-300 dark:border-white/[0.12]" : ""
-                    }`}
-                  >
-                    <td className={`sticky left-0 z-10 px-4 py-2 border-r border-gray-200 dark:border-white/[0.06] whitespace-nowrap ${
-                      row.bold
-                        ? "font-bold text-gray-900 dark:text-white bg-gray-50/50 dark:bg-[#141414]"
-                        : "text-gray-700 dark:text-gray-300 bg-white dark:bg-[#0a0a0a]"
-                    }`}>
-                      {row.label}
-                    </td>
-                    {MONTHS.map((_, i) => {
-                      const val = data[row.key][i];
-                      const isComputed = isEnding || (isBeginning && i > 0);
-
-                      if (isComputed) {
-                        return (
-                          <td
-                            key={i}
-                            className={`px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap border-b border-gray-100 dark:border-white/[0.03] ${
-                              row.bold
-                                ? "font-bold text-gray-900 dark:text-white"
-                                : isNegativeRow
-                                  ? "text-red-600 dark:text-red-400"
-                                  : "text-gray-700 dark:text-gray-300"
-                            } ${i > ACTUAL_THROUGH ? "bg-amber-50/30 dark:bg-amber-950/10" : ""}`}
+                  <Fragment key={row.key}>
+                    <tr
+                      className={`${row.bold ? "bg-gray-50/50 dark:bg-white/[0.015]" : ""} ${
+                        row.border === "top" ? "border-t-2 border-gray-300 dark:border-white/[0.12]" : ""
+                      }`}
+                    >
+                      <td className={`sticky left-0 z-10 px-4 py-2 border-r border-gray-200 dark:border-white/[0.06] whitespace-nowrap ${
+                        row.bold
+                          ? "font-bold text-gray-900 dark:text-white bg-gray-50/50 dark:bg-[#141414]"
+                          : "text-gray-700 dark:text-gray-300 bg-white dark:bg-[#0a0a0a]"
+                      }`}>
+                        {hasBreakdown ? (
+                          <button
+                            onClick={() => toggleExpand(row.key)}
+                            className="flex items-center gap-1.5 hover:text-gray-900 dark:hover:text-white transition-colors"
                           >
-                            {fmt(val, isNegativeRow)}
-                          </td>
-                        );
-                      }
+                            <ChevronIcon expanded={isExpanded} />
+                            {row.label}
+                          </button>
+                        ) : (
+                          row.label
+                        )}
+                      </td>
+                      {MONTHS.map((_, i) => {
+                        const val = data[row.key][i];
+                        const isComputed = isEnding || (isBeginning && i > 0);
 
-                      if (isInput) {
-                        return (
-                          <td
-                            key={`${i}-${inputKey}`}
-                            className={`px-1 py-1 border-b border-gray-100 dark:border-white/[0.03] ${
-                              i > ACTUAL_THROUGH ? "bg-amber-50/30 dark:bg-amber-950/10" : ""
-                            }`}
-                          >
-                            <input
-                              type="text"
-                              defaultValue={val !== 0 ? fmt(val, isNegativeRow) : ""}
-                              onBlur={(e) => handleChange(row.key, i, e.target.value)}
-                              placeholder="—"
-                              className={`w-full px-2 py-1.5 text-right text-sm font-mono tabular-nums bg-transparent border border-transparent hover:border-gray-200 dark:hover:border-white/[0.08] focus:border-[#EF373E]/50 focus:ring-1 focus:ring-[#EF373E]/20 rounded outline-none transition-colors ${
+                        if (isComputed) {
+                          return (
+                            <td
+                              key={i}
+                              className={`px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap border-b border-gray-100 dark:border-white/[0.03] ${
                                 row.bold
                                   ? "font-bold text-gray-900 dark:text-white"
                                   : isNegativeRow
                                     ? "text-red-600 dark:text-red-400"
                                     : "text-gray-700 dark:text-gray-300"
-                              } placeholder:text-gray-300 dark:placeholder:text-gray-600`}
-                            />
+                              } ${i > ACTUAL_THROUGH ? "bg-amber-50/30 dark:bg-amber-950/10" : ""}`}
+                            >
+                              {fmt(val, isNegativeRow)}
+                            </td>
+                          );
+                        }
+
+                        if (isInput) {
+                          return (
+                            <td
+                              key={`${i}-${inputKey}`}
+                              className={`px-1 py-1 border-b border-gray-100 dark:border-white/[0.03] ${
+                                i > ACTUAL_THROUGH ? "bg-amber-50/30 dark:bg-amber-950/10" : ""
+                              }`}
+                            >
+                              <input
+                                type="text"
+                                defaultValue={val !== 0 ? fmt(val, isNegativeRow) : ""}
+                                onBlur={(e) => handleChange(row.key, i, e.target.value)}
+                                placeholder="—"
+                                className={`w-full px-2 py-1.5 text-right text-sm font-mono tabular-nums bg-transparent border border-transparent hover:border-gray-200 dark:hover:border-white/[0.08] focus:border-[#EF373E]/50 focus:ring-1 focus:ring-[#EF373E]/20 rounded outline-none transition-colors ${
+                                  row.bold
+                                    ? "font-bold text-gray-900 dark:text-white"
+                                    : isNegativeRow
+                                      ? "text-red-600 dark:text-red-400"
+                                      : "text-gray-700 dark:text-gray-300"
+                                } placeholder:text-gray-300 dark:placeholder:text-gray-600`}
+                              />
+                            </td>
+                          );
+                        }
+
+                        return (
+                          <td
+                            key={i}
+                            className={`px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap border-b border-gray-100 dark:border-white/[0.03] text-gray-700 dark:text-gray-300 ${
+                              i > ACTUAL_THROUGH ? "bg-amber-50/30 dark:bg-amber-950/10" : ""
+                            }`}
+                          >
+                            {fmt(val)}
                           </td>
                         );
-                      }
-
-                      return (
-                        <td
-                          key={i}
-                          className={`px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap border-b border-gray-100 dark:border-white/[0.03] text-gray-700 dark:text-gray-300 ${
-                            i > ACTUAL_THROUGH ? "bg-amber-50/30 dark:bg-amber-950/10" : ""
-                          }`}
-                        >
-                          {fmt(val)}
-                        </td>
-                      );
-                    })}
-                  </tr>
+                      })}
+                    </tr>
+                    {isExpanded && hasBreakdown && PRODUCTS.map((product) =>
+                      renderProductRow(row.key, product),
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
