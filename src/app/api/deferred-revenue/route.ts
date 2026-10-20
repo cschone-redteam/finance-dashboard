@@ -99,10 +99,14 @@ export async function POST() {
   let rtDrMonthly: Record<string, number> = {};
   let goDrMonthly: Record<string, number> = {};
 
-  // Fetch classes from RedTeam to find TeamPlayer class IDs
+  // Fetch classes from RedTeam to find FieldLens and TeamPlayer class IDs
+  let fieldLensClassIds: string[] = [];
   let teamPlayerClassIds: string[] = [];
   try {
     const classes = await fetchClasses(REDTEAM_REALM);
+    fieldLensClassIds = classes
+      .filter((c) => c.Name.toLowerCase().includes("fieldlens") || c.Name.toLowerCase().includes("field lens"))
+      .map((c) => c.Id);
     teamPlayerClassIds = classes
       .filter((c) => c.Name.toLowerCase().includes("teamplayer") || c.Name.toLowerCase().includes("team player"))
       .map((c) => c.Id);
@@ -111,7 +115,7 @@ export async function POST() {
   }
 
   // Fetch P&L and Balance Sheet from both realms in parallel
-  // Also fetch TeamPlayer-class-filtered P&L for each TP class
+  // Also fetch class-filtered P&Ls for FieldLens and TeamPlayer
   const basePromises = [
     fetchProfitAndLossMonthly(REDTEAM_REALM, startDate, endDate),
     fetchProfitAndLossMonthly(PASKR_REALM, startDate, endDate),
@@ -119,27 +123,48 @@ export async function POST() {
     fetchBalanceSheetMonthly(PASKR_REALM, bsStartDate, bsEndDate),
     fetchChargebeeMonthlyBillings(year),
   ] as const;
+  const flPromises = fieldLensClassIds.map((id) =>
+    fetchProfitAndLossMonthly(REDTEAM_REALM, startDate, endDate, id),
+  );
   const tpPromises = teamPlayerClassIds.map((id) =>
     fetchProfitAndLossMonthly(REDTEAM_REALM, startDate, endDate, id),
   );
 
-  const [rtPnlResult, goPnlResult, rtBsResult, goBsResult, cbResult, ...tpPnlResults] =
-    await Promise.allSettled([...basePromises, ...tpPromises]);
+  const [baseResults, classResults] = await Promise.all([
+    Promise.allSettled(basePromises),
+    Promise.allSettled([...flPromises, ...tpPromises]),
+  ]);
+  const [rtPnlResult, goPnlResult, rtBsResult, goBsResult, cbResult] = baseResults;
+  const flPnlResults = classResults.slice(0, flPromises.length);
+  const tpPnlResults = classResults.slice(flPromises.length);
 
-  // RedTeam P&L → total revenue and FieldLens revenue (by account name)
+  // RedTeam P&L → total revenue (all sections)
   let rtTotalRevenueByMonth: Record<string, number> = {};
-  let rtFieldLensRevenueByMonth: Record<string, number> = {};
   if (rtPnlResult.status === "fulfilled") {
     const entries = parseMonthlyPnLReport(rtPnlResult.value);
-    const allRevenue = extractRevenueByProduct(entries);
-    // Total revenue across all products (everything in revenue sections)
-    for (const [month, prods] of Object.entries(allRevenue)) {
-      rtTotalRevenueByMonth[month] = prods.Flex + prods.FieldLens + prods.TeamPlayer + prods.Go;
-      rtFieldLensRevenueByMonth[month] = prods.FieldLens;
+    for (const entry of entries) {
+      if (!isRevenueSection(entry.section)) continue;
+      for (const [month, amount] of Object.entries(entry.monthly)) {
+        rtTotalRevenueByMonth[month] = (rtTotalRevenueByMonth[month] || 0) + amount;
+      }
     }
     sources.push("qbo-pnl-redteam");
   } else {
     console.error("RedTeam P&L error:", rtPnlResult.reason);
+  }
+
+  // FieldLens revenue from class-filtered P&L
+  let rtFieldLensRevenueByMonth: Record<string, number> = {};
+  for (const result of flPnlResults) {
+    if (result.status === "fulfilled") {
+      const entries = parseMonthlyPnLReport(result.value);
+      for (const entry of entries) {
+        if (!isRevenueSection(entry.section)) continue;
+        for (const [month, amount] of Object.entries(entry.monthly)) {
+          rtFieldLensRevenueByMonth[month] = (rtFieldLensRevenueByMonth[month] || 0) + amount;
+        }
+      }
+    }
   }
 
   // TeamPlayer revenue from class-filtered P&L
@@ -156,7 +181,7 @@ export async function POST() {
     }
   }
 
-  // Compute per-product revenue: FieldLens by account, TeamPlayer by class, Flex = residual
+  // Per-product revenue: FieldLens + TeamPlayer by class, Flex = residual
   for (const month of Object.keys(rtTotalRevenueByMonth)) {
     const total = rtTotalRevenueByMonth[month] || 0;
     const fl = rtFieldLensRevenueByMonth[month] || 0;
