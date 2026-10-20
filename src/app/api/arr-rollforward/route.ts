@@ -19,13 +19,18 @@ function toNum(val: string | null | undefined): number {
   return isNaN(n) ? 0 : n;
 }
 
-function classifyProduct(productOwned: string | null | undefined): Product {
-  if (!productOwned) return "Flex";
-  const p = productOwned.toLowerCase().trim();
-  if (p.includes("fieldlens") || p.includes("field lens")) return "FieldLens";
-  if (p.includes("teamplayer") || p.includes("team player")) return "TeamPlayer";
-  if (p === "go" || p.includes("paskr") || p.includes("redteam go")) return "Go";
-  return "Flex";
+function parseProducts(productOwned: string | null | undefined): Product[] {
+  if (!productOwned) return ["Flex"];
+  const parts = productOwned.toLowerCase().trim().split(/\s*\+\s*/);
+  const products: Product[] = [];
+  for (const part of parts) {
+    const t = part.trim();
+    if (t === "rtflex" || t === "flex") products.push("Flex");
+    else if (t === "rtgo" || t === "go") products.push("Go");
+    else if (t === "fl" || t === "fieldlens") products.push("FieldLens");
+    else if (t === "tp" || t === "teamplayer") products.push("TeamPlayer");
+  }
+  return products.length > 0 ? products : ["Flex"];
 }
 
 function emptyProductArrays(): Record<Product, number[]> {
@@ -83,9 +88,10 @@ export async function GET() {
       const mi = monthIndex(deal.closedate);
       if (mi === null) continue;
       const arr = toNum(deal.arr) || toNum(deal.amount);
-      const product = classifyProduct(deal.product_owned);
+      const products = parseProducts(deal.product_owned);
+      const share = arr / products.length;
       newTotal[mi] += arr;
-      newByProduct[product][mi] += arr;
+      for (const product of products) newByProduct[product][mi] += share;
     }
 
     const churns: Row[] = churnRes.data?.rows || [];
@@ -93,9 +99,10 @@ export async function GET() {
       const mi = monthIndex(deal.closedate);
       if (mi === null) continue;
       const lost = toNum(deal.expiring_arr);
-      const product = classifyProduct(deal.product_owned);
+      const products = parseProducts(deal.product_owned);
+      const share = lost / products.length;
       churnTotal[mi] += lost;
-      churnByProduct[product][mi] += lost;
+      for (const product of products) churnByProduct[product][mi] += share;
     }
 
     const renewals: Row[] = renewalsRes.data?.rows || [];
@@ -106,13 +113,14 @@ export async function GET() {
       const oldVal = toNum(deal.expiring_arr);
       if (newVal === 0 && oldVal === 0) continue;
       const diff = newVal - oldVal;
-      const product = classifyProduct(deal.product_owned);
+      const products = parseProducts(deal.product_owned);
+      const share = Math.abs(diff) / products.length;
       if (diff > 0) {
         expansionTotal[mi] += diff;
-        expansionByProduct[product][mi] += diff;
+        for (const product of products) expansionByProduct[product][mi] += share;
       } else if (diff < 0) {
         downsellTotal[mi] += Math.abs(diff);
-        downsellByProduct[product][mi] += Math.abs(diff);
+        for (const product of products) downsellByProduct[product][mi] += share;
       }
     }
 
