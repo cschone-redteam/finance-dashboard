@@ -76,10 +76,13 @@ const REPORT_COLUMNS: Record<ReportKey, ColumnDef[]> = {
     { key: "company", label: "Company" },
     { key: "lifecycle_stage", label: "Stage" },
     { key: "lead_status", label: "Lead Status" },
+    { key: "product_owned", label: "Product" },
     { key: "source", label: "Source" },
     { key: "create_date", label: "Created", format: "date" },
     { key: "mql_date", label: "MQL Date", format: "date" },
     { key: "sql_date", label: "SQL Date", format: "date" },
+    { key: "turned_into_sql_date", label: "Turned SQL", format: "date" },
+    { key: "customer_date", label: "Client Date", format: "date" },
   ],
 };
 
@@ -159,11 +162,13 @@ const EXPORT_COLUMNS: Record<ReportKey, ColumnDef[]> = {
     { key: "company", label: "Company" },
     { key: "lifecycle_stage", label: "Stage" },
     { key: "lead_status", label: "Lead Status" },
+    { key: "product_owned", label: "Product" },
     { key: "source", label: "Source" },
     { key: "create_date", label: "Created", format: "date" },
     { key: "mql_date", label: "MQL Date", format: "date" },
     { key: "sql_date", label: "SQL Date", format: "date" },
-    { key: "first_conversion_date", label: "First Conversion", format: "date" },
+    { key: "turned_into_sql_date", label: "Turned SQL", format: "date" },
+    { key: "customer_date", label: "Client Date", format: "date" },
   ],
 };
 
@@ -280,15 +285,17 @@ function ReportSummary({ reportKey, rows }: { reportKey: ReportKey; rows: Report
           { label: "Total Sub ARR", value: formatCellValue(sumField("subscription_arr"), "currency") },
         ];
       case "marketing-funnel": {
-        const stageCount = (stage: string) => rows.filter((r) => r.lifecycle_stage === stage).length;
-        const mqls = stageCount("MQL");
-        const sqls = stageCount("SQL");
-        const clients = stageCount("Client");
+        let mqlCount = 0;
+        let sqlCount = 0;
+        for (const r of rows) {
+          if (r.mql_date) mqlCount++;
+          if (r.sql_date) sqlCount++;
+        }
         return [
-          { label: "Total", value: rows.length.toString() },
-          { label: "MQLs", value: mqls.toString() },
-          { label: "SQLs", value: sqls.toString() },
-          { label: "Clients", value: clients.toString() },
+          { label: "Total Contacts", value: rows.length.toString() },
+          { label: "MQLs", value: mqlCount.toString() },
+          { label: "SQLs", value: sqlCount.toString() },
+          { label: "Conversion", value: mqlCount > 0 ? `${Math.round((sqlCount / mqlCount) * 100)}%` : "—" },
         ];
       }
     }
@@ -380,73 +387,7 @@ function ReportMonthlyChart({ reportKey, rows }: { reportKey: ReportKey; rows: R
     return { entries, grandTotal };
   }, [reportKey, rows]);
 
-  const funnelData = useMemo(() => {
-    if (reportKey !== "marketing-funnel") return null;
-    const FUNNEL_STAGES = ["MQL", "SQL", "Client"];
-    const stageCounts: { stage: string; count: number }[] = [];
-    for (const stage of FUNNEL_STAGES) {
-      stageCounts.push({ stage, count: rows.filter((r) => r.lifecycle_stage === stage).length });
-    }
-
-    const bySrc: Record<string, number> = {};
-    for (const row of rows) {
-      const src = String(row.source || "Unknown");
-      bySrc[src] = (bySrc[src] || 0) + 1;
-    }
-    const topSources = Object.entries(bySrc).sort((a, b) => b[1] - a[1]).slice(0, 8);
-
-    return { stageCounts, topSources };
-  }, [reportKey, rows]);
-
-  if (reportKey === "marketing-funnel" && funnelData) {
-    const maxCount = Math.max(...funnelData.stageCounts.map((s) => s.count), 1);
-    const maxSrc = Math.max(...funnelData.topSources.map(([, c]) => c), 1);
-    const STAGE_COLORS: Record<string, string> = {
-      Lead: "#94a3b8", Subscriber: "#64748b", MQL: "#f59e0b", SQL: "#f97316",
-      Opportunity: "#3b82f6", Client: "#10b981", Other: "#a1a1aa",
-    };
-    return (
-      <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-white/[0.02] border border-gray-200 dark:border-white/[0.06] rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Lifecycle Funnel</h3>
-            <span className="text-xs text-gray-400">{rows.length} contacts</span>
-          </div>
-          <div className="space-y-2">
-            {funnelData.stageCounts.filter((s) => s.count > 0).map(({ stage, count }) => (
-              <div key={stage} className="flex items-center gap-3">
-                <div className="w-24 text-xs text-gray-600 dark:text-gray-400 truncate">{stage}</div>
-                <div className="flex-1 h-5 bg-gray-100 dark:bg-white/[0.04] rounded overflow-hidden">
-                  <div
-                    className="h-full rounded transition-all"
-                    style={{ width: `${(count / maxCount) * 100}%`, backgroundColor: STAGE_COLORS[stage] || "#a1a1aa" }}
-                  />
-                </div>
-                <div className="w-10 text-right text-xs font-mono text-gray-700 dark:text-gray-300">{count}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="bg-white dark:bg-white/[0.02] border border-gray-200 dark:border-white/[0.06] rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Top Sources</h3>
-          <div className="space-y-2">
-            {funnelData.topSources.map(([src, count]) => (
-              <div key={src} className="flex items-center gap-3">
-                <div className="w-28 text-xs text-gray-600 dark:text-gray-400 truncate" title={src}>{src}</div>
-                <div className="flex-1 h-5 bg-gray-100 dark:bg-white/[0.04] rounded overflow-hidden">
-                  <div
-                    className="h-full rounded transition-all"
-                    style={{ width: `${(count / maxSrc) * 100}%`, backgroundColor: "#f59e0b" }}
-                  />
-                </div>
-                <div className="w-10 text-right text-xs font-mono text-gray-700 dark:text-gray-300">{count}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (reportKey === "marketing-funnel") return null;
 
   if (reportKey === "arr-stack" && arrBySegment) {
     const maxVal = Math.max(...arrBySegment.entries.map(([, v]) => v.total), 1);
@@ -514,6 +455,134 @@ function ReportMonthlyChart({ reportKey, rows }: { reportKey: ReportKey; rows: R
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+const DIGITAL_SOURCES = new Set([
+  "ORGANIC_SEARCH", "PAID_SEARCH", "SOCIAL_MEDIA", "EMAIL_MARKETING",
+  "PAID_SOCIAL", "OTHER_CAMPAIGNS",
+]);
+
+function FunnelMetricsTable({ funnelRows, bookingsRows }: { funnelRows: ReportRow[]; bookingsRows: ReportRow[] }) {
+  const metrics = useMemo(() => {
+    const mqls = new Array(12).fill(0);
+    const sqlsMktg = new Array(12).fill(0);
+    const sqlsSales = new Array(12).fill(0);
+    const wins = new Array(12).fill(0);
+
+    for (const row of funnelRows) {
+      if (String(row.source || "").toUpperCase() === "OFFLINE") continue;
+      const m = getMonth2026(row.mql_date);
+      if (m !== null) mqls[m]++;
+    }
+
+    for (const row of funnelRows) {
+      const src = String(row.source || "").toUpperCase();
+      if (src === "OFFLINE") continue;
+      const sqlM = getMonth2026(row.sql_date);
+      const hasDeal = row.has_deals === "true";
+      const createM = getMonth2026(row.create_date);
+      const m = sqlM ?? (hasDeal ? createM : null);
+      if (m !== null) {
+        if (DIGITAL_SOURCES.has(src)) {
+          sqlsMktg[m]++;
+        } else {
+          sqlsSales[m]++;
+        }
+      }
+    }
+
+    for (const row of bookingsRows) {
+      const m = getMonth2026(row.closedate);
+      if (m !== null) wins[m]++;
+    }
+
+    const sqlsTotal = mqls.map((_, i) => sqlsMktg[i] + sqlsSales[i]);
+    const mqlToSqlRate = mqls.map((mql, i) => mql > 0 ? sqlsTotal[i] / mql : 0);
+    const sqlToWinRate = sqlsTotal.map((sql, i) => sql > 0 ? wins[i] / sql : 0);
+    const mqlToDealRatio = mqls.map((mql, i) => wins[i] > 0 ? Math.round(mql / wins[i]) : 0);
+
+    return { mqls, sqlsMktg, sqlsSales, sqlsTotal, wins, mqlToSqlRate, sqlToWinRate, mqlToDealRatio };
+  }, [funnelRows, bookingsRows]);
+
+  const visibleMonths = useMemo(() => {
+    let last = 0;
+    for (let i = 11; i >= 0; i--) {
+      if (metrics.mqls[i] > 0 || metrics.sqlsTotal[i] > 0 || metrics.wins[i] > 0) {
+        last = i;
+        break;
+      }
+    }
+    return Math.max(last + 1, 1);
+  }, [metrics]);
+
+  type MetricRow = {
+    label: string;
+    values: number[];
+    format: "number" | "percent" | "ratio";
+    italic?: boolean;
+    bold?: boolean;
+    border?: boolean;
+  };
+
+  const rows: MetricRow[] = [
+    { label: "MQLs (incl. Flex, Go, FL)", values: metrics.mqls, format: "number", bold: true },
+    { label: "MQL to SQL Rate", values: metrics.mqlToSqlRate, format: "percent", italic: true },
+    { label: "SQLs - Marketing Sourced", values: metrics.sqlsMktg, format: "number" },
+    { label: "SQLs - Sales Sourced", values: metrics.sqlsSales, format: "number" },
+    { label: "SQLs - Total", values: metrics.sqlsTotal, format: "number", bold: true },
+    { label: "Wins", values: metrics.wins, format: "number" },
+    { label: "Conversion Rate: SQLs to Win", values: metrics.sqlToWinRate, format: "percent", italic: true },
+    { label: "Ratio: MQLs to Deals", values: metrics.mqlToDealRatio, format: "ratio" },
+  ];
+
+  function fmtMetric(value: number, format: "number" | "percent" | "ratio"): string {
+    if (value === 0) return "—";
+    if (format === "percent") return `${Math.round(value * 100)}%`;
+    if (format === "ratio") return `${value}x`;
+    return value.toLocaleString();
+  }
+
+  return (
+    <div className="mb-6 overflow-x-auto rounded-xl border border-gray-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.01]">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr>
+            <th className="sticky left-0 z-10 bg-[#8B1A1A] dark:bg-[#6B1414] px-4 py-2.5 text-left text-xs font-bold text-white uppercase tracking-wider border-b border-[#6B1414] min-w-[240px]">
+              Funnel Metrics
+            </th>
+            {MONTHS_2026.slice(0, visibleMonths).map((m) => (
+              <th
+                key={m}
+                className="bg-[#8B1A1A] dark:bg-[#6B1414] px-4 py-2.5 text-center text-xs font-bold text-white uppercase tracking-wider border-b border-[#6B1414] min-w-[80px]"
+              >
+                {m}-26
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr
+              key={row.label}
+              className={`${ri % 2 === 0 ? "bg-gray-50/50 dark:bg-white/[0.015]" : "bg-white dark:bg-white/[0.005]"} ${row.border ? "border-t-2 border-gray-300 dark:border-white/[0.12]" : ""}`}
+            >
+              <td className={`sticky left-0 z-10 px-4 py-2 border-r border-gray-200 dark:border-white/[0.06] whitespace-nowrap ${ri % 2 === 0 ? "bg-gray-50/50 dark:bg-[#0d0d0d]" : "bg-white dark:bg-[#0a0a0a]"} ${row.bold ? "font-bold text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300"} ${row.italic ? "italic text-[#8B1A1A] dark:text-red-400/80" : ""}`}>
+                {row.label}
+              </td>
+              {row.values.slice(0, visibleMonths).map((val, i) => (
+                <td
+                  key={i}
+                  className={`px-4 py-2 text-center font-mono tabular-nums whitespace-nowrap border-b border-gray-100 dark:border-white/[0.03] ${row.bold ? "font-bold text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300"} ${row.italic ? "italic text-[#8B1A1A] dark:text-red-400/80" : ""}`}
+                >
+                  {fmtMetric(val, row.format)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -764,6 +833,9 @@ export default function HubSpotReportsPage() {
         </div>
 
         <ReportMonthlyChart reportKey={activeReport} rows={currentData.rows} />
+        {activeReport === "marketing-funnel" && currentData.rows.length > 0 && (
+          <FunnelMetricsTable funnelRows={currentData.rows} bookingsRows={reportData.bookings.rows} />
+        )}
 
         {currentData.loading ? (
           <div className="text-center py-16 text-gray-400">Loading...</div>

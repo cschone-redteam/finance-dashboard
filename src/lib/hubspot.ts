@@ -131,6 +131,25 @@ async function getCompanyNames(dealIds: string[]): Promise<Map<string, string>> 
   return map;
 }
 
+async function getContactsWithDeals(contactIds: string[]): Promise<Set<string>> {
+  const withDeals = new Set<string>();
+  if (contactIds.length === 0) return withDeals;
+
+  for (let i = 0; i < contactIds.length; i += 100) {
+    const batch = contactIds.slice(i, i + 100);
+    const data = await hubspotFetch<{ results: AssocResult[] }>(
+      "/crm/v4/associations/contacts/deals/batch/read",
+      { method: "POST", body: JSON.stringify({ inputs: batch.map((id) => ({ id })) }) },
+    );
+    for (const r of data.results) {
+      if (r.to?.length > 0) {
+        withDeals.add(r.from.id);
+      }
+    }
+  }
+  return withDeals;
+}
+
 function getCutoffDate(): string {
   const now = new Date();
   return `${now.getFullYear()}-01-01`;
@@ -302,19 +321,30 @@ export async function syncArrStack(): Promise<Row[]> {
 
 export async function syncMarketingFunnel(): Promise<Row[]> {
   const cutoffTs = new Date(getCutoffDate()).getTime().toString();
-  const stages = ["marketingqualifiedlead", "salesqualifiedlead", "customer"];
-  const contacts = await searchAll("contacts", stages.map((stage) => ({
-    filters: [
-      { propertyName: "createdate", operator: "GTE", value: cutoffTs },
-      { propertyName: "lifecyclestage", operator: "EQ", value: stage },
-    ],
-  })), [
+  const cutoffDate = getCutoffDate();
+  const contacts = await searchAll("contacts", [
+    { filters: [{ propertyName: "hs_v2_date_entered_marketingqualifiedlead", operator: "GTE", value: cutoffTs }] },
+    { filters: [{ propertyName: "hs_v2_date_entered_salesqualifiedlead", operator: "GTE", value: cutoffTs }] },
+    { filters: [{ propertyName: "turned_into_mql_date", operator: "GTE", value: cutoffDate }] },
+    { filters: [{ propertyName: "turned_into_sql_date", operator: "GTE", value: cutoffDate }] },
+    { filters: [{ propertyName: "num_associated_deals", operator: "GT", value: "0" }, { propertyName: "createdate", operator: "GTE", value: cutoffTs }, { propertyName: "hs_analytics_source", operator: "NEQ", value: "OFFLINE" }] },
+  ], [
     "firstname", "lastname", "email", "company",
-    "lifecyclestage", "hs_lead_status",
-    "createdate", "turned_into_mql_date", "turned_into_sql_date",
+    "lifecyclestage", "hs_lead_status", "product_owned",
+    "hs_analytics_source",
+    "createdate",
     "hs_v2_date_entered_marketingqualifiedlead",
     "hs_v2_date_entered_salesqualifiedlead",
-    "first_conversion_date", "hs_analytics_source",
+    "hs_v2_date_entered_customer",
+    "original_date_entered_mql_lifecyclestage",
+    "original_date_entered_sql_lifecyclestage",
+    "original_date_entered_client_lifecyclestage",
+    "turned_into_mql_date",
+    "turned_into_sql_date",
+    "lead_status_date_first_mql",
+    "lead_status_date_first_sql",
+    "lead_status_date_first_open_deal",
+    "num_associated_deals",
   ]);
 
   const STAGE_LABELS: Record<string, string> = {
@@ -334,17 +364,34 @@ export async function syncMarketingFunnel(): Promise<Row[]> {
     "1413425509": "Job Hunter",
   };
 
+  const candidateIds = contacts
+    .filter((c) => {
+      const src = (c.properties.hs_analytics_source || "").toUpperCase();
+      const sqlDate = c.properties.hs_v2_date_entered_salesqualifiedlead || c.properties.original_date_entered_sql_lifecyclestage;
+      return src !== "OFFLINE" && !sqlDate;
+    })
+    .map((c) => c.id);
+
+  const contactsWithDeals = await getContactsWithDeals(candidateIds);
+
   return contacts.map((c) => ({
     name: [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ") || null,
     email: c.properties.email,
     company: c.properties.company,
     lifecycle_stage: STAGE_LABELS[c.properties.lifecyclestage || ""] || c.properties.lifecyclestage,
     lead_status: c.properties.hs_lead_status,
-    create_date: c.properties.createdate,
-    mql_date: c.properties.turned_into_mql_date || c.properties.hs_v2_date_entered_marketingqualifiedlead,
-    sql_date: c.properties.turned_into_sql_date || c.properties.hs_v2_date_entered_salesqualifiedlead,
-    first_conversion_date: c.properties.first_conversion_date,
+    product_owned: c.properties.product_owned,
     source: c.properties.hs_analytics_source,
+    create_date: c.properties.createdate,
+    mql_date: c.properties.hs_v2_date_entered_marketingqualifiedlead || c.properties.original_date_entered_mql_lifecyclestage,
+    sql_date: c.properties.hs_v2_date_entered_salesqualifiedlead || c.properties.original_date_entered_sql_lifecyclestage,
+    customer_date: c.properties.hs_v2_date_entered_customer || c.properties.original_date_entered_client_lifecyclestage,
+    turned_into_mql_date: c.properties.turned_into_mql_date,
+    turned_into_sql_date: c.properties.turned_into_sql_date,
+    lead_status_first_mql: c.properties.lead_status_date_first_mql,
+    lead_status_first_sql: c.properties.lead_status_date_first_sql,
+    lead_status_first_open_deal: c.properties.lead_status_date_first_open_deal,
+    has_deals: contactsWithDeals.has(c.id) || (parseInt(c.properties.num_associated_deals || "0", 10) > 0) ? "true" : null,
   }));
 }
 
