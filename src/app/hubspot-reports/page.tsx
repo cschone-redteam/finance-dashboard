@@ -464,47 +464,60 @@ const DIGITAL_SOURCES = new Set([
   "PAID_SOCIAL", "OTHER_CAMPAIGNS",
 ]);
 
-function FunnelMetricsTable({ funnelRows, bookingsRows }: { funnelRows: ReportRow[]; bookingsRows: ReportRow[] }) {
-  const metrics = useMemo(() => {
-    const mqls = new Array(12).fill(0);
-    const sqlsMktg = new Array(12).fill(0);
-    const sqlsSales = new Array(12).fill(0);
-    const wins = new Array(12).fill(0);
+type FunnelMetrics = {
+  mqls: number[];
+  sqlsMktg: number[];
+  sqlsSales: number[];
+  sqlsTotal: number[];
+  wins: number[];
+  mqlToSqlRate: number[];
+  sqlToWinRate: number[];
+  mqlToDealRatio: number[];
+};
 
-    for (const row of funnelRows) {
-      if (String(row.source || "").toUpperCase() === "OFFLINE") continue;
-      const m = getMonth2026(row.mql_date);
-      if (m !== null) mqls[m]++;
-    }
+function computeFunnelMetrics(funnelRows: ReportRow[], bookingsRows: ReportRow[]): FunnelMetrics {
+  const mqls = new Array(12).fill(0);
+  const sqlsMktg = new Array(12).fill(0);
+  const sqlsSales = new Array(12).fill(0);
+  const wins = new Array(12).fill(0);
 
-    for (const row of funnelRows) {
-      const src = String(row.source || "").toUpperCase();
-      if (src === "OFFLINE") continue;
-      const sqlM = getMonth2026(row.sql_date);
-      const hasDeal = row.has_deals === "true";
-      const createM = getMonth2026(row.create_date);
-      const m = sqlM ?? (hasDeal ? createM : null);
-      if (m !== null) {
-        if (DIGITAL_SOURCES.has(src)) {
-          sqlsMktg[m]++;
-        } else {
-          sqlsSales[m]++;
-        }
+  for (const row of funnelRows) {
+    if (String(row.source || "").toUpperCase() === "OFFLINE") continue;
+    const m = getMonth2026(row.mql_date);
+    if (m !== null) mqls[m]++;
+  }
+
+  for (const row of funnelRows) {
+    const src = String(row.source || "").toUpperCase();
+    if (src === "OFFLINE") continue;
+    const sqlM = getMonth2026(row.sql_date);
+    const hasDeal = row.has_deals === "true";
+    const createM = getMonth2026(row.create_date);
+    const m = sqlM ?? (hasDeal ? createM : null);
+    if (m !== null) {
+      if (DIGITAL_SOURCES.has(src)) {
+        sqlsMktg[m]++;
+      } else {
+        sqlsSales[m]++;
       }
     }
+  }
 
-    for (const row of bookingsRows) {
-      const m = getMonth2026(row.closedate);
-      if (m !== null) wins[m]++;
-    }
+  for (const row of bookingsRows) {
+    const m = getMonth2026(row.closedate);
+    if (m !== null) wins[m]++;
+  }
 
-    const sqlsTotal = mqls.map((_, i) => sqlsMktg[i] + sqlsSales[i]);
-    const mqlToSqlRate = mqls.map((mql, i) => mql > 0 ? sqlsTotal[i] / mql : 0);
-    const sqlToWinRate = sqlsTotal.map((sql, i) => sql > 0 ? wins[i] / sql : 0);
-    const mqlToDealRatio = mqls.map((mql, i) => wins[i] > 0 ? Math.round(mql / wins[i]) : 0);
+  const sqlsTotal = mqls.map((_, i) => sqlsMktg[i] + sqlsSales[i]);
+  const mqlToSqlRate = mqls.map((mql, i) => mql > 0 ? sqlsTotal[i] / mql : 0);
+  const sqlToWinRate = sqlsTotal.map((sql, i) => sql > 0 ? wins[i] / sql : 0);
+  const mqlToDealRatio = mqls.map((mql, i) => wins[i] > 0 ? Math.round(mql / wins[i]) : 0);
 
-    return { mqls, sqlsMktg, sqlsSales, sqlsTotal, wins, mqlToSqlRate, sqlToWinRate, mqlToDealRatio };
-  }, [funnelRows, bookingsRows]);
+  return { mqls, sqlsMktg, sqlsSales, sqlsTotal, wins, mqlToSqlRate, sqlToWinRate, mqlToDealRatio };
+}
+
+function FunnelMetricsTable({ funnelRows, bookingsRows }: { funnelRows: ReportRow[]; bookingsRows: ReportRow[] }) {
+  const metrics = useMemo(() => computeFunnelMetrics(funnelRows, bookingsRows), [funnelRows, bookingsRows]);
 
   const visibleMonths = useMemo(() => {
     let last = 0;
@@ -734,27 +747,86 @@ export default function HubSpotReportsPage() {
   const handleExportReport = useCallback((reportKey: ReportKey, rows: ReportRow[]) => {
     const report = REPORTS.find((r) => r.key === reportKey);
     if (!report) return;
-    const cols = EXPORT_COLUMNS[reportKey];
-    const sheetData = rows.map((row) => {
-      const obj: Record<string, string | number> = {};
-      for (const c of cols) {
-        let val = row[c.key] ?? "";
-        if (c.key === "health_status" || c.key === "health_phase")
-          val = String(val).replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
-        if (c.format === "currency" || c.format === "number") {
-          const num = parseFloat(String(val));
-          obj[c.label] = isNaN(num) ? "" : num;
-        } else {
-          obj[c.label] = String(val);
+
+    const wb = XLSX.utils.book_new();
+
+    if (reportKey === "marketing-funnel") {
+      const metrics = computeFunnelMetrics(rows, reportData.bookings.rows);
+
+      let lastMonth = 0;
+      for (let i = 11; i >= 0; i--) {
+        if (metrics.mqls[i] > 0 || metrics.sqlsTotal[i] > 0 || metrics.wins[i] > 0) {
+          lastMonth = i;
+          break;
         }
       }
-      return obj;
-    });
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(sheetData);
-    XLSX.utils.book_append_sheet(wb, ws, report.label);
+      const monthCount = Math.max(lastMonth + 1, 1);
+      const monthHeaders = MONTHS_2026.slice(0, monthCount).map((m) => `${m}-26`);
+
+      const metricRows: { label: string; values: number[]; format: "number" | "percent" | "ratio" }[] = [
+        { label: "MQLs (incl. Flex, Go, FL)", values: metrics.mqls, format: "number" },
+        { label: "MQL to SQL Rate", values: metrics.mqlToSqlRate, format: "percent" },
+        { label: "SQLs - Marketing Sourced", values: metrics.sqlsMktg, format: "number" },
+        { label: "SQLs - Sales Sourced", values: metrics.sqlsSales, format: "number" },
+        { label: "SQLs - Total", values: metrics.sqlsTotal, format: "number" },
+        { label: "Wins", values: metrics.wins, format: "number" },
+        { label: "Conversion Rate: SQLs to Win", values: metrics.sqlToWinRate, format: "percent" },
+        { label: "Ratio: MQLs to Deals", values: metrics.mqlToDealRatio, format: "ratio" },
+      ];
+
+      const sheetData = metricRows.map((row) => {
+        const obj: Record<string, string | number> = { "Funnel Metrics": row.label };
+        for (let i = 0; i < monthCount; i++) {
+          const v = row.values[i];
+          if (row.format === "percent") obj[monthHeaders[i]] = v;
+          else if (row.format === "ratio") obj[monthHeaders[i]] = v === 0 ? 0 : v;
+          else obj[monthHeaders[i]] = v;
+        }
+        return obj;
+      });
+
+      const ws = XLSX.utils.json_to_sheet(sheetData);
+      XLSX.utils.book_append_sheet(wb, ws, "Funnel Metrics");
+
+      const detailCols = EXPORT_COLUMNS[reportKey];
+      const detailData = rows.map((row) => {
+        const obj: Record<string, string | number> = {};
+        for (const c of detailCols) {
+          let val = row[c.key] ?? "";
+          if (c.format === "currency" || c.format === "number") {
+            const num = parseFloat(String(val));
+            obj[c.label] = isNaN(num) ? "" : num;
+          } else {
+            obj[c.label] = String(val);
+          }
+        }
+        return obj;
+      });
+      const ws2 = XLSX.utils.json_to_sheet(detailData);
+      XLSX.utils.book_append_sheet(wb, ws2, "Contact Detail");
+    } else {
+      const cols = EXPORT_COLUMNS[reportKey];
+      const sheetData = rows.map((row) => {
+        const obj: Record<string, string | number> = {};
+        for (const c of cols) {
+          let val = row[c.key] ?? "";
+          if (c.key === "health_status" || c.key === "health_phase")
+            val = String(val).replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+          if (c.format === "currency" || c.format === "number") {
+            const num = parseFloat(String(val));
+            obj[c.label] = isNaN(num) ? "" : num;
+          } else {
+            obj[c.label] = String(val);
+          }
+        }
+        return obj;
+      });
+      const ws = XLSX.utils.json_to_sheet(sheetData);
+      XLSX.utils.book_append_sheet(wb, ws, report.label);
+    }
+
     XLSX.writeFile(wb, `${reportKey}-${new Date().toISOString().split("T")[0]}.xlsx`);
-  }, []);
+  }, [reportData.bookings.rows]);
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
