@@ -395,6 +395,30 @@ export async function syncMarketingFunnel(): Promise<Row[]> {
   }));
 }
 
+export async function syncDemoCompleted(): Promise<Row[]> {
+  const cutoffTs = new Date(getCutoffDate()).getTime().toString();
+  const deals = await searchAll("deals", [
+    {
+      filters: [
+        { propertyName: "pipeline", operator: "EQ", value: "default" },
+        { propertyName: "hs_v2_date_entered_qualifiedtobuy", operator: "GTE", value: cutoffTs },
+      ],
+    },
+  ], [
+    "dealname", "hs_v2_date_entered_qualifiedtobuy", "hs_analytics_source",
+    "dealstage", "closedate", "createdate",
+  ]);
+
+  return deals.map((d) => ({
+    dealname: d.properties.dealname,
+    demo_completed_date: d.properties.hs_v2_date_entered_qualifiedtobuy,
+    source: d.properties.hs_analytics_source,
+    dealstage: d.properties.dealstage,
+    closedate: d.properties.closedate,
+    createdate: d.properties.createdate,
+  }));
+}
+
 let ownerCache: { data: Map<string, string>; ts: number } | null = null;
 const OWNER_CACHE_TTL = 5 * 60 * 1000;
 

@@ -475,7 +475,9 @@ type FunnelMetrics = {
   mqlToDealRatio: number[];
 };
 
-function computeFunnelMetrics(funnelRows: ReportRow[], bookingsRows: ReportRow[]): FunnelMetrics {
+const DEMO_COMPLETED_CUTOVER = 6; // July (0-indexed) — use deal-level SQLs from this month onward
+
+function computeFunnelMetrics(funnelRows: ReportRow[], bookingsRows: ReportRow[], demoCompletedRows: ReportRow[]): FunnelMetrics {
   const mqls = new Array(12).fill(0);
   const sqlsMktg = new Array(12).fill(0);
   const sqlsSales = new Array(12).fill(0);
@@ -487,6 +489,7 @@ function computeFunnelMetrics(funnelRows: ReportRow[], bookingsRows: ReportRow[]
     if (m !== null) mqls[m]++;
   }
 
+  // Jan-Jun: contact-level SQL counting (lifecycle stage + deal associations)
   for (const row of funnelRows) {
     const src = String(row.source || "").toUpperCase();
     if (src === "OFFLINE") continue;
@@ -494,7 +497,20 @@ function computeFunnelMetrics(funnelRows: ReportRow[], bookingsRows: ReportRow[]
     const hasDeal = row.has_deals === "true";
     const createM = getMonth2026(row.create_date);
     const m = sqlM ?? (hasDeal ? createM : null);
-    if (m !== null) {
+    if (m !== null && m < DEMO_COMPLETED_CUTOVER) {
+      if (DIGITAL_SOURCES.has(src)) {
+        sqlsMktg[m]++;
+      } else {
+        sqlsSales[m]++;
+      }
+    }
+  }
+
+  // Jul+: deal-level SQL counting (deals reaching "02 - Demo Completed")
+  for (const deal of demoCompletedRows) {
+    const m = getMonth2026(deal.demo_completed_date);
+    if (m !== null && m >= DEMO_COMPLETED_CUTOVER) {
+      const src = String(deal.source || "").toUpperCase();
       if (DIGITAL_SOURCES.has(src)) {
         sqlsMktg[m]++;
       } else {
@@ -516,8 +532,8 @@ function computeFunnelMetrics(funnelRows: ReportRow[], bookingsRows: ReportRow[]
   return { mqls, sqlsMktg, sqlsSales, sqlsTotal, wins, mqlToSqlRate, sqlToWinRate, mqlToDealRatio };
 }
 
-function FunnelMetricsTable({ funnelRows, bookingsRows }: { funnelRows: ReportRow[]; bookingsRows: ReportRow[] }) {
-  const metrics = useMemo(() => computeFunnelMetrics(funnelRows, bookingsRows), [funnelRows, bookingsRows]);
+function FunnelMetricsTable({ funnelRows, bookingsRows, demoCompletedRows }: { funnelRows: ReportRow[]; bookingsRows: ReportRow[]; demoCompletedRows: ReportRow[] }) {
+  const metrics = useMemo(() => computeFunnelMetrics(funnelRows, bookingsRows, demoCompletedRows), [funnelRows, bookingsRows, demoCompletedRows]);
 
   const visibleMonths = useMemo(() => {
     let last = 0;
@@ -611,6 +627,7 @@ export default function HubSpotReportsPage() {
     "arr-stack": { rows: [], synced_at: null, loading: false },
     "marketing-funnel": { rows: [], synced_at: null, loading: false },
   });
+  const [demoCompletedRows, setDemoCompletedRows] = useState<ReportRow[]>([]);
   const [sort, setSort] = useState<SortConfig>(null);
   const [search, setSearch] = useState("");
   const [syncing, setSyncing] = useState(false);
@@ -634,9 +651,18 @@ export default function HubSpotReportsPage() {
     }
   }, []);
 
+  const fetchDemoCompleted = useCallback(async () => {
+    try {
+      const res = await fetch("/api/hubspot-reports?type=demo-completed");
+      const data = await res.json();
+      setDemoCompletedRows(data.rows || []);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     for (const r of REPORTS) fetchReport(r.key);
-  }, [fetchReport]);
+    fetchDemoCompleted();
+  }, [fetchReport, fetchDemoCompleted]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
@@ -657,12 +683,13 @@ export default function HubSpotReportsPage() {
       for (const key of REPORTS.map((r) => r.key)) {
         fetchReport(key);
       }
+      fetchDemoCompleted();
     } catch {
       setSyncError("Failed to connect to sync endpoint");
     } finally {
       setSyncing(false);
     }
-  }, [fetchReport]);
+  }, [fetchReport, fetchDemoCompleted]);
 
   const columns = REPORT_COLUMNS[activeReport];
   const currentData = reportData[activeReport];
@@ -751,7 +778,7 @@ export default function HubSpotReportsPage() {
     const wb = XLSX.utils.book_new();
 
     if (reportKey === "marketing-funnel") {
-      const metrics = computeFunnelMetrics(rows, reportData.bookings.rows);
+      const metrics = computeFunnelMetrics(rows, reportData.bookings.rows, demoCompletedRows);
 
       let lastMonth = 0;
       for (let i = 11; i >= 0; i--) {
@@ -826,7 +853,7 @@ export default function HubSpotReportsPage() {
     }
 
     XLSX.writeFile(wb, `${reportKey}-${new Date().toISOString().split("T")[0]}.xlsx`);
-  }, [reportData.bookings.rows]);
+  }, [reportData.bookings.rows, demoCompletedRows]);
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
@@ -906,7 +933,7 @@ export default function HubSpotReportsPage() {
 
         <ReportMonthlyChart reportKey={activeReport} rows={currentData.rows} />
         {activeReport === "marketing-funnel" && currentData.rows.length > 0 && (
-          <FunnelMetricsTable funnelRows={currentData.rows} bookingsRows={reportData.bookings.rows} />
+          <FunnelMetricsTable funnelRows={currentData.rows} bookingsRows={reportData.bookings.rows} demoCompletedRows={demoCompletedRows} />
         )}
 
         {currentData.loading ? (

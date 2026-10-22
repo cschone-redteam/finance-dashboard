@@ -6,6 +6,7 @@ import {
   syncBookingsDeals,
   syncArrStack,
   syncMarketingFunnel,
+  syncDemoCompleted,
 } from "@/lib/hubspot";
 
 async function upsertReport(reportType: string, rows: Record<string, string | null>[]) {
@@ -40,6 +41,7 @@ export async function POST() {
     { key: "bookings", fn: syncBookingsDeals },
     { key: "arr-stack", fn: syncArrStack },
     { key: "marketing-funnel", fn: syncMarketingFunnel },
+    { key: "demo-completed", fn: syncDemoCompleted },
   ] as const;
 
   for (const { key, fn } of reports) {
