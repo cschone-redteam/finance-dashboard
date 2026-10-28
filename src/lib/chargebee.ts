@@ -137,6 +137,111 @@ export async function fetchChargebeeMonthlyBillings(
   return monthly;
 }
 
+export type ChargebeeSubscription = {
+  id: string;
+  customer_id: string;
+  customer: string;
+  plan_id: string;
+  plan_amount: number;
+  status: string;
+  billing_period: number;
+  billing_period_unit: string;
+  mrr: number;
+  current_term_start: string;
+  current_term_end: string;
+  items: {
+    item_price_id: string;
+    item_type: string;
+    quantity: number;
+    unit_price: number;
+    amount: number;
+  }[];
+};
+
+interface ChargebeeRawSubscription {
+  id: string;
+  customer_id: string;
+  plan_id?: string;
+  plan_amount?: number;
+  plan_unit_price?: number;
+  plan_quantity?: number;
+  status: string;
+  billing_period?: number;
+  billing_period_unit?: string;
+  mrr?: number;
+  current_term_start?: number;
+  current_term_end?: number;
+  subscription_items?: {
+    item_price_id: string;
+    item_type: string;
+    quantity?: number;
+    unit_price?: number;
+    amount?: number;
+  }[];
+}
+
+async function listAllSubscriptions(
+  params: Record<string, string>
+): Promise<ChargebeeRawSubscription[]> {
+  const all: ChargebeeRawSubscription[] = [];
+  let offset: string | undefined;
+
+  do {
+    const query: Record<string, string> = { ...params, limit: "100" };
+    if (offset) query.offset = offset;
+
+    const url = new URL(`${CHARGEBEE_BASE}/subscriptions`);
+    for (const [k, v] of Object.entries(query)) {
+      url.searchParams.set(k, v);
+    }
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: authHeader() },
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Chargebee API ${res.status}: ${text.slice(0, 300)}`);
+    }
+
+    const data = await res.json();
+    for (const item of data.list) {
+      if (item.subscription) all.push(item.subscription);
+    }
+    offset = data.next_offset;
+  } while (offset);
+
+  return all;
+}
+
+export async function fetchChargebeeSubscriptions(): Promise<ChargebeeSubscription[]> {
+  const [rawSubs, customerMap] = await Promise.all([
+    listAllSubscriptions({ "status[is]": "active" }),
+    getCustomerMap(),
+  ]);
+
+  return rawSubs.map((sub) => ({
+    id: sub.id,
+    customer_id: sub.customer_id,
+    customer: customerMap.get(sub.customer_id) || sub.customer_id,
+    plan_id: sub.plan_id || "",
+    plan_amount: (sub.plan_amount || 0) / 100,
+    status: sub.status,
+    billing_period: sub.billing_period || 1,
+    billing_period_unit: sub.billing_period_unit || "month",
+    mrr: (sub.mrr || 0) / 100,
+    current_term_start: sub.current_term_start ? epochToDate(sub.current_term_start) : "",
+    current_term_end: sub.current_term_end ? epochToDate(sub.current_term_end) : "",
+    items: (sub.subscription_items || []).map((item) => ({
+      item_price_id: item.item_price_id,
+      item_type: item.item_type,
+      quantity: item.quantity || 1,
+      unit_price: (item.unit_price || 0) / 100,
+      amount: (item.amount || 0) / 100,
+    })),
+  }));
+}
+
 export async function fetchChargebeeOutstandingInvoices(): Promise<
   ChargebeeOutstandingInvoice[]
 > {
