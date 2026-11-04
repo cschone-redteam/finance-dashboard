@@ -190,6 +190,52 @@ export default function InvoicesPage() {
     XLSX.writeFile(wb, `invoices-${entityLabel}${ownerSuffix}-${new Date().toISOString().split("T")[0]}.xlsx`);
   }, [filtered, entity, ownerFilter]);
 
+  const [exportingAll, setExportingAll] = useState(false);
+
+  const handleExportAll = useCallback(async () => {
+    setExportingAll(true);
+    try {
+      const entities: { key: Entity; label: string }[] = [
+        { key: "flex", label: "RedTeam Flex" },
+        { key: "go", label: "RedTeam Go" },
+        { key: "cb-flex", label: "Chargebee Flex" },
+      ];
+
+      const results = await Promise.all(
+        entities.map(async ({ key }) => {
+          const cached = cache.current[key];
+          if (cached) return cached.customers;
+          const res = await fetch(`/api/invoices?entity=${key}`);
+          if (!res.ok) return [];
+          const data = await res.json();
+          return (data.customers || []) as CustomerGroup[];
+        })
+      );
+
+      const wb = XLSX.utils.book_new();
+      entities.forEach(({ label }, i) => {
+        const rows = results[i].flatMap((c: CustomerGroup) =>
+          c.invoices.map((inv) => ({
+            Customer: c.customer,
+            Owner: c.owner || "",
+            Status: c.status === "Active" ? "Active" : "Churn",
+            "Invoice #": inv.invoiceNumber,
+            Date: inv.txnDate,
+            "Due Date": inv.dueDate,
+            Total: inv.totalAmt,
+            Balance: inv.balance,
+          }))
+        );
+        const ws = XLSX.utils.json_to_sheet(rows);
+        XLSX.utils.book_append_sheet(wb, ws, label);
+      });
+
+      XLSX.writeFile(wb, `invoices-all-${new Date().toISOString().split("T")[0]}.xlsx`);
+    } finally {
+      setExportingAll(false);
+    }
+  }, []);
+
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
       <div className="mx-auto">
@@ -379,16 +425,35 @@ export default function InvoicesPage() {
               Clear filters
             </button>
           )}
-          <button
-            onClick={handleExport}
-            disabled={loading || filtered.length === 0}
-            className="ml-auto px-3 py-2 text-sm font-medium rounded-lg bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-            </svg>
-            Export XLSX
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={handleExportAll}
+              disabled={exportingAll}
+              className="px-3 py-2 text-sm font-medium rounded-lg bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+            >
+              {exportingAll ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+              )}
+              {exportingAll ? "Exporting..." : "Export All"}
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={loading || filtered.length === 0}
+              className="px-3 py-2 text-sm font-medium rounded-lg bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Export XLSX
+            </button>
+          </div>
         </div>
 
         {/* Customer list */}
