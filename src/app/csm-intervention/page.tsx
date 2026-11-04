@@ -100,8 +100,10 @@ function firstDistinctWord(s: string): string {
 
 export default function CsmInterventionPage() {
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [allRows, setAllRows] = useState<{ entity: string; rows: ArRow[] }[]>([]);
   const [churnNames, setChurnNames] = useState<string[]>([]);
+  const [syncedAt, setSyncedAt] = useState<Date | null>(null);
   const [search, setSearch] = useState("");
   const [entityFilter, setEntityFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"" | "Active" | "Churned">("");
@@ -109,33 +111,53 @@ export default function CsmInterventionPage() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const results: { entity: string; rows: ArRow[] }[] = [];
-      const [, churnRes] = await Promise.all([
-        Promise.all(
-          AR_COMPANIES.map(async (co) => {
-            try {
-              const res = await fetch(`/api/ar?realmId=${co.id}`);
-              const data = await res.json();
-              results.push({ entity: co.label, rows: data.rows || [] });
-            } catch {
-              results.push({ entity: co.label, rows: [] });
-            }
-          }),
-        ),
-        fetch("/api/hubspot-reports?type=churn").then((r) => r.json()).catch(() => ({ rows: [] })),
-      ]);
-      const names = ((churnRes.rows || []) as { company?: string; dealname?: string }[])
-        .map((d) => d.company || d.dealname || "")
-        .filter(Boolean);
-      setChurnNames(names);
-      setAllRows(results);
-      setLoading(false);
-    }
-    load();
+  const loadCached = useCallback(async () => {
+    setLoading(true);
+    const results: { entity: string; rows: ArRow[] }[] = [];
+    const [, churnRes] = await Promise.all([
+      Promise.all(
+        AR_COMPANIES.map(async (co) => {
+          try {
+            const res = await fetch(`/api/ar?realmId=${co.id}`);
+            const data = await res.json();
+            results.push({ entity: co.label, rows: data.rows || [] });
+          } catch {
+            results.push({ entity: co.label, rows: [] });
+          }
+        }),
+      ),
+      fetch("/api/hubspot-reports?type=churn").then((r) => r.json()).catch(() => ({ rows: [] })),
+    ]);
+    const names = ((churnRes.rows || []) as { company?: string; dealname?: string }[])
+      .map((d) => d.company || d.dealname || "")
+      .filter(Boolean);
+    setChurnNames(names);
+    setAllRows(results);
+    setSyncedAt(new Date());
+    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    loadCached();
+  }, [loadCached]);
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await Promise.all(
+        AR_COMPANIES.map((co) =>
+          fetch("/api/ar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ realmId: co.id, realmLabel: co.label }),
+          })
+        )
+      );
+      await loadCached();
+    } finally {
+      setSyncing(false);
+    }
+  }, [loadCached]);
 
   const customers = useMemo(() => {
     const churnNormalized = new Set(churnNames.map(normalize));
@@ -247,13 +269,39 @@ export default function CsmInterventionPage() {
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
       <div className="mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
-            CSM Intervention
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Customers with AR aging over 45 days requiring CSM follow-up
-          </p>
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
+              CSM Intervention
+            </h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Customers with AR aging over 45 days requiring CSM follow-up
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {syncedAt && !loading && !syncing && (
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                Last synced {syncedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+              </span>
+            )}
+            <button
+              onClick={handleSync}
+              disabled={syncing || loading}
+              className="px-3 py-2 text-sm font-medium rounded-lg bg-white dark:bg-white/[0.03] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] border border-gray-200 dark:border-white/[0.06] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+            >
+              {syncing ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                </svg>
+              )}
+              {syncing ? "Syncing..." : "Sync"}
+            </button>
+          </div>
         </div>
 
         {loading ? (
