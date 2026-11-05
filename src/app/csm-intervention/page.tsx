@@ -184,7 +184,7 @@ export default function CsmInterventionPage() {
 
     for (const { entity, rows } of allRows) {
       for (const row of rows) {
-        if (row.days_past_due <= 45) continue;
+        if (row.days_past_due <= 30) continue;
         if (row.open_balance <= 0) continue;
         if (isIntercompany(row.customer)) continue;
 
@@ -275,7 +275,7 @@ export default function CsmInterventionPage() {
               CSM Intervention
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Customers with AR aging over 45 days requiring CSM follow-up
+              Customers with AR aging over 30 days requiring CSM follow-up
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -308,7 +308,7 @@ export default function CsmInterventionPage() {
           <div className="text-center py-16 text-gray-400">Loading AR data...</div>
         ) : customers.length === 0 ? (
           <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 p-16 text-center">
-            <p className="text-gray-400 text-sm font-medium">No customers with aging over 45 days</p>
+            <p className="text-gray-400 text-sm font-medium">No customers with aging over 30 days</p>
             <p className="text-xs text-gray-400 mt-1">Sync AR data from the AR Aging page first</p>
           </div>
         ) : (
