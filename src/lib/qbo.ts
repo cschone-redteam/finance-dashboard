@@ -456,6 +456,42 @@ export type OutstandingInvoice = {
   totalAmt: number;
 };
 
+export async function fetchInvoicesInRange(
+  realmId: string,
+  startDate: string,
+  endDate: string
+): Promise<{ txnDate: string; totalAmt: number }[]> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const invoices = await queryAllPages(
+    realmId,
+    accessToken,
+    `SELECT * FROM Invoice WHERE TxnDate >= '${startDate}' AND TxnDate <= '${endDate}'`,
+    "Invoice"
+  );
+  return invoices.map((inv) => ({
+    txnDate: (inv.TxnDate as string) || "",
+    totalAmt: (inv.TotalAmt as number) || 0,
+  }));
+}
+
+export async function fetchPaymentsInRange(
+  realmId: string,
+  startDate: string,
+  endDate: string
+): Promise<{ txnDate: string; totalAmt: number }[]> {
+  const accessToken = await refreshTokenIfNeeded(realmId);
+  const payments = await queryAllPages(
+    realmId,
+    accessToken,
+    `SELECT * FROM Payment WHERE TxnDate >= '${startDate}' AND TxnDate <= '${endDate}'`,
+    "Payment"
+  );
+  return payments.map((p) => ({
+    txnDate: (p.TxnDate as string) || "",
+    totalAmt: (p.TotalAmt as number) || 0,
+  }));
+}
+
 export async function fetchOutstandingInvoices(
   realmId: string
 ): Promise<OutstandingInvoice[]> {
