@@ -157,6 +157,45 @@ function FYSection({
                 })}
               </>
             )}
+
+            {/* % Collected */}
+            <tr className="border-t border-gray-200 dark:border-white/[0.06]">
+              <td className="px-4 py-2.5 font-medium text-gray-500 dark:text-gray-400 italic sticky left-0 bg-white dark:bg-[#0d0d0d] z-10">
+                % Collected
+              </td>
+              {monthKeys.map((k) => {
+                const inv = val(k, "invoiced", "total");
+                const col = val(k, "collected", "total");
+                const pct = inv > 0 ? (col / inv) * 100 : 0;
+                return (
+                  <td key={k} className={`text-right px-3 py-2.5 tabular-nums font-medium ${
+                    inv === 0 ? "text-gray-300 dark:text-gray-600" :
+                    pct >= 100 ? "text-emerald-600 dark:text-emerald-400" :
+                    pct >= 90 ? "text-gray-900 dark:text-white" :
+                    pct >= 75 ? "text-amber-600 dark:text-amber-400" :
+                    "text-red-500 dark:text-red-400"
+                  }`}>
+                    {inv === 0 ? "—" : `${pct.toFixed(1)}%`}
+                  </td>
+                );
+              })}
+              {(() => {
+                const totalInv = sumEntity("invoiced", "total");
+                const totalCol = sumEntity("collected", "total");
+                const totalPct = totalInv > 0 ? (totalCol / totalInv) * 100 : 0;
+                return (
+                  <td className={`text-right px-4 py-2.5 tabular-nums font-semibold border-l border-gray-100 dark:border-white/[0.06] ${
+                    totalInv === 0 ? "text-gray-300 dark:text-gray-600" :
+                    totalPct >= 100 ? "text-emerald-600 dark:text-emerald-400" :
+                    totalPct >= 90 ? "text-gray-900 dark:text-white" :
+                    totalPct >= 75 ? "text-amber-600 dark:text-amber-400" :
+                    "text-red-500 dark:text-red-400"
+                  }`}>
+                    {totalInv === 0 ? "—" : `${totalPct.toFixed(1)}%`}
+                  </td>
+                );
+              })()}
+            </tr>
           </tbody>
         </table>
       </div>
@@ -248,6 +287,18 @@ export default function BillingPage() {
 
         rows.push(totalRow, flexRow, goRow, otherRow);
       }
+
+      const pctRow: Record<string, string | number> = { "": "% Collected" };
+      let invSum = 0, colSum = 0;
+      monthKeys.forEach((k, i) => {
+        const inv = data[k]?.invoiced?.total || 0;
+        const col = data[k]?.collected?.total || 0;
+        invSum += inv;
+        colSum += col;
+        pctRow[MONTH_LABELS[i]] = inv > 0 ? Math.round((col / inv) * 1000) / 10 / 100 : 0;
+      });
+      pctRow["Total"] = invSum > 0 ? Math.round((colSum / invSum) * 1000) / 10 / 100 : 0;
+      rows.push(pctRow);
 
       const ws = XLSX.utils.json_to_sheet(rows);
       XLSX.utils.book_append_sheet(wb, ws, `FY${year.slice(2)}`);
