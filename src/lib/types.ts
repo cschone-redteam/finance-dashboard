@@ -1,39 +1,5 @@
 export type Entity = "RTS" | "PASKR" | "RTP" | "All";
 
-export type CloseStepDef = {
-  index: number;
-  day: number;
-  description: string;
-  entity: Entity;
-  category: string;
-};
-
-export type DayGroup = {
-  day: number;
-  label: string;
-  steps: CloseStepDef[];
-};
-
-export type ClosePeriod = {
-  id: string;
-  year_month: string;
-  status: "open" | "in_progress" | "closed";
-  started_at: string | null;
-  closed_at: string | null;
-  created_at: string;
-};
-
-export type CloseTaskCompletion = {
-  id: string;
-  period_id: string;
-  step_index: number;
-  completed: boolean;
-  completed_at: string | null;
-  notes: string | null;
-};
-
-// Trial Balance types
-
 export type QboToken = {
   id: string;
   realm_id: string;
