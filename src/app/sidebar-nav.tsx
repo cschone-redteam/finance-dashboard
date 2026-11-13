@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SignOutButton } from "./sign-out-button";
 
 const NAV_ITEMS = [
   {
@@ -96,7 +97,7 @@ const NAV_ITEMS = [
   },
 ];
 
-export function SidebarNav() {
+export function SidebarNav({ userEmail }: { userEmail: string | null }) {
   const pathname = usePathname();
 
   return (
@@ -152,6 +153,14 @@ export function SidebarNav() {
           <div className="text-[11px] text-gray-500 font-medium">RedTeam Software</div>
           <div className="text-[10px] text-gray-600 mt-0.5">Finance Dashboard v1.0</div>
         </div>
+        {userEmail && (
+          <div className="px-3 pt-2 flex items-center justify-between gap-2">
+            <span className="text-[11px] text-gray-400 truncate" title={userEmail}>
+              {userEmail}
+            </span>
+            <SignOutButton />
+          </div>
+        )}
       </div>
     </nav>
   );

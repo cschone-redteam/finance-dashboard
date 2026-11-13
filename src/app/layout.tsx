@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { SidebarNav } from "./sidebar-nav";
+import { auth } from "@/auth";
+import { AppShell } from "./app-shell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,23 +19,20 @@ export const metadata: Metadata = {
   description: "Finance analytics and reporting for RedTeam",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-screen flex bg-[#f5f6f8] dark:bg-[#0f1117]">
-        <SidebarNav />
-        <main className="flex-1 min-w-0 ml-[220px] print:ml-0 min-h-screen">
-          <div className="px-6 py-6">
-            {children}
-          </div>
-        </main>
+        <AppShell userEmail={session?.user?.email ?? null}>{children}</AppShell>
       </body>
     </html>
   );
